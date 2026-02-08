@@ -1,0 +1,61 @@
+CREATE TABLE SongEntity (
+    id TEXT PRIMARY KEY NOT NULL,
+    path TEXT,
+    filename TEXT,
+    title TEXT,
+    artist TEXT,
+    album TEXT,
+    mtime REAL,
+    size INTEGER,
+    hasCover INTEGER DEFAULT 0,
+    albumArt TEXT,
+    localCoverPath TEXT,
+    localLyricsPath TEXT
+);
+
+CREATE TABLE AppMetadata (
+    key TEXT PRIMARY KEY NOT NULL,
+    value TEXT
+);
+
+-- 索引，加速 UI 排序
+CREATE INDEX song_title_idx ON SongEntity(title);
+
+-- 获取所有歌曲
+getAllSongs:
+SELECT * FROM SongEntity ORDER BY title ASC;
+
+-- 获取特定歌曲
+getSongById:
+SELECT * FROM SongEntity WHERE id = ?;
+
+-- 插入或更新
+insertSong:
+INSERT OR REPLACE INTO SongEntity(id, path, filename, title, artist, album, mtime, size, hasCover, albumArt, localCoverPath, localLyricsPath)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- 删除特定歌曲
+deleteSongById:
+DELETE FROM SongEntity WHERE id = ?;
+
+-- 删除不存在于列表中的歌曲
+deleteMissingSongs:
+DELETE FROM SongEntity WHERE id NOT IN ?;
+
+-- 清空库
+deleteAllSongs:
+DELETE FROM SongEntity;
+
+-- 元数据操作
+getMetadata:
+SELECT value FROM AppMetadata WHERE key = ?;
+
+insertMetadata:
+INSERT OR REPLACE INTO AppMetadata(key, value)
+VALUES (?, ?);
+
+-- 更新本地文件路径
+updateLocalPaths:
+UPDATE SongEntity 
+SET localCoverPath = ?, localLyricsPath = ?
+WHERE id = ?;
