@@ -17,7 +17,10 @@ data class Song(
     @SerialName("has_cover")
     val hasCover: Int = 0,
     @SerialName("album_art")
-    val albumArt: String? = null
+    val albumArt: String? = null,
+    val localCoverPath: String? = null,
+    val localLyricsPath: String? = null,
+    val localAudioPath: String? = null
 )
 
 
@@ -25,6 +28,7 @@ data class Song(
 data class Playlist(
     val id: String = "",
     val name: String = "",
+    val cover: String? = null,
     @SerialName("is_default")
     val isDefault: Int = 0,
     @SerialName("song_count")

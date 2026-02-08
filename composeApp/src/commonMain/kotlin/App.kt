@@ -25,6 +25,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -106,12 +107,22 @@ fun App(driverFactory: DatabaseDriverFactory) {
     }
 
     LaunchedEffect(Unit) {
+        // 1. 启动时监听本地数据库的收藏列表 (实现离线可用)
+        val localFavsJob = launch {
+            repository.ensureDefaultPlaylistExists()
+            repository.getFavorites().collect { ids ->
+                GlobalState.updateFavorites(ids)
+            }
+        }
+
+        // 2. 网络同步逻辑
         suspend fun refreshFavs() {
             try {
-                val favs = api.getPlaylistSongs("default").toSet()
-                GlobalState.updateFavorites(favs)
+                // 全量同步所有歌单及其歌曲到本地数据库
+                repository.syncPlaylists()
             } catch (e: Throwable) {
                 e.printStackTrace()
+                // 网络失败时，不做任何操作，因为上面的 localFavsJob 已经保证了显示本地旧数据
             }
         }
 
@@ -151,6 +162,7 @@ fun App(driverFactory: DatabaseDriverFactory) {
                             .zIndex(if (selectedIndex == 0) 1f else 0f)
                     )
                     PlaylistScreen(
+                        repository = repository,
                         modifier = Modifier
                             .fillMaxSize()
                             .graphicsLayer { alpha = if (selectedIndex == 1) 1f else 0f }
@@ -170,7 +182,10 @@ fun App(driverFactory: DatabaseDriverFactory) {
                     enter = slideInVertically(initialOffsetY = { it }),
                     exit = slideOutVertically(targetOffsetY = { it })
                 ) {
-                    PlayerScreen(onClose = { showPlayerScreen = false })
+                    PlayerScreen(
+                        onClose = { showPlayerScreen = false },
+                        repository = repository
+                    )
                 }
 
                 // 全局播放列表弹窗

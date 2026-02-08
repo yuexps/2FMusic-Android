@@ -118,9 +118,14 @@ class MusicApi {
         return client.get("$baseUrl/api/system/status").body()
     }
 
-    suspend fun downloadFile(url: String): ByteArray {
+    suspend fun downloadFile(url: String, onProgress: ((bytesSentTotal: Long, contentLength: Long) -> Unit)? = null): ByteArray {
         val fullUrl = if (url.startsWith("http")) url else "$baseUrl$url"
-        return client.get(fullUrl).body()
+        val response = client.get(fullUrl) {
+            onDownload { bytesSentTotal, contentLength ->
+                onProgress?.invoke(bytesSentTotal, contentLength ?: 0L)
+            }
+        }
+        return response.body()
     }
 
 }

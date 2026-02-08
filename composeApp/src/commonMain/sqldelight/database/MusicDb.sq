@@ -10,7 +10,8 @@ CREATE TABLE SongEntity (
     hasCover INTEGER DEFAULT 0,
     albumArt TEXT,
     localCoverPath TEXT,
-    localLyricsPath TEXT
+    localLyricsPath TEXT,
+    localAudioPath TEXT
 );
 
 CREATE TABLE AppMetadata (
@@ -31,8 +32,8 @@ SELECT * FROM SongEntity WHERE id = ?;
 
 -- 插入或更新
 insertSong:
-INSERT OR REPLACE INTO SongEntity(id, path, filename, title, artist, album, mtime, size, hasCover, albumArt, localCoverPath, localLyricsPath)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO SongEntity(id, path, filename, title, artist, album, mtime, size, hasCover, albumArt, localCoverPath, localLyricsPath, localAudioPath)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- 删除特定歌曲
 deleteSongById:
@@ -54,8 +55,73 @@ insertMetadata:
 INSERT OR REPLACE INTO AppMetadata(key, value)
 VALUES (?, ?);
 
--- 更新本地文件路径
-updateLocalPaths:
+-- 更新封面和歌词路径
+updateCoverAndLyrics:
 UPDATE SongEntity 
 SET localCoverPath = ?, localLyricsPath = ?
 WHERE id = ?;
+
+-- 更新音频文件路径
+updateAudioPath:
+UPDATE SongEntity 
+SET localAudioPath = ?
+WHERE id = ?;
+
+
+
+-- 全量歌单缓存 (新)
+CREATE TABLE PlaylistEntity (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    songCount INTEGER DEFAULT 0,
+    cover TEXT,
+    isDefault INTEGER DEFAULT 0,
+    createdAt REAL
+);
+
+-- 歌单-歌曲关联表
+CREATE TABLE PlaylistSong (
+    playlistId TEXT NOT NULL,
+    songId TEXT NOT NULL,
+    PRIMARY KEY (playlistId, songId),
+    FOREIGN KEY(songId) REFERENCES SongEntity(id) ON DELETE CASCADE
+);
+
+-- 手动刷新歌单数量 (替代触发器，避免 SqlDelight 编译错误)
+refreshPlaylistCount:
+UPDATE PlaylistEntity 
+SET songCount = (SELECT COUNT(*) FROM PlaylistSong WHERE playlistId = :playlistId) 
+WHERE id = :playlistId;
+
+-- 所有歌单操作
+getAllPlaylists:
+SELECT * FROM PlaylistEntity ORDER BY isDefault DESC, createdAt ASC;
+
+insertPlaylist:
+INSERT OR REPLACE INTO PlaylistEntity(id, name, songCount, cover, isDefault, createdAt)
+VALUES (?, ?, ?, ?, ?, ?);
+
+deletePlaylist:
+DELETE FROM PlaylistEntity WHERE id = ?;
+
+deleteAllPlaylists:
+DELETE FROM PlaylistEntity;
+
+-- 歌单歌曲操作
+getSongsInPlaylist:
+SELECT SongEntity.*
+FROM PlaylistSong
+INNER JOIN SongEntity ON PlaylistSong.songId = SongEntity.id
+WHERE PlaylistSong.playlistId = ?;
+
+getPlaylistSongIds:
+SELECT songId FROM PlaylistSong WHERE playlistId = ?;
+
+addSongToPlaylist:
+INSERT OR REPLACE INTO PlaylistSong(playlistId, songId) VALUES (?, ?);
+
+removeSongFromPlaylist:
+DELETE FROM PlaylistSong WHERE playlistId = ? AND songId = ?;
+
+removeAllSongsFromPlaylist:
+DELETE FROM PlaylistSong WHERE playlistId = ?;

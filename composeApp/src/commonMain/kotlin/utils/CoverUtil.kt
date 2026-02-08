@@ -11,12 +11,16 @@ object CoverUtil {
     fun getCoverUrl(song: Song?): String? {
         if (song == null) return null
         
-        // 1. 优先检查本地缓存
+        // 1. 优先使用数据库已记录的本地路径（如果已同步）
+        song.localCoverPath?.let { path ->
+            val normalized = path.replace("\\", "/")
+            return if (normalized.startsWith("/")) "file://$normalized" else "file:///$normalized"
+        }
+        
+        // 2. 备选检查标准路径
         val fileName = "cover_${song.id}.jpg"
         val localPath = FileStore.getLocalPath(fileName)
         if (localPath != null) {
-            // 在 Desktop/Windows 上，ImageLoader 通常需要 file:// 前缀来识别本地文件
-            // 对路径进行标准化处理（替换反斜杠为正斜杠）
             val normalizedPath = localPath.replace("\\", "/")
             return if (normalizedPath.startsWith("/")) "file://$normalizedPath" else "file:///$normalizedPath"
         }

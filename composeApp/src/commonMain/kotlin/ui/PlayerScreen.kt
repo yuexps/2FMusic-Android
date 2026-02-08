@@ -50,10 +50,14 @@ import top.yukonga.miuix.kmp.extra.SuperListPopup
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
+import utils.Toast
+
+import data.MusicRepository
 
 @Composable
 fun PlayerScreen(
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    repository: MusicRepository
 ) {
     val currentSong by GlobalPlayerController.currentSong.collectAsState()
     val playbackState by GlobalPlayerController.playbackState.collectAsState()
@@ -168,16 +172,36 @@ fun PlayerScreen(
                         onDismissRequest = { showMenu.value = false }
                     ) {
                         ListPopupColumn {
-                            DropdownImpl(
-                                text = "删除此音乐",
-                                optionSize = 1,
-                                isSelected = false,
-                                onSelectedIndexChange = { 
-                                    showMenu.value = false
-                                    showDeleteDialog.value = true
-                                },
-                                index = 0
-                            )
+                                DropdownImpl(
+                                    text = "下载到本地",
+                                    optionSize = 2,
+                                    isSelected = false,
+                                    onSelectedIndexChange = {
+                                        showMenu.value = false
+                                        currentSong?.let { song ->
+                                            utils.Toast.show("开始下载: ${song.title}")
+                                            println("[PlayerScreen] Start downloading ${song.title}")
+                                            val result = repository.downloadMusic(song)
+                                            when (result) {
+                                                MusicRepository.DownloadResult.STARTED -> { /* Toast already shown */ }
+                                                MusicRepository.DownloadResult.EXISTS -> utils.Toast.show("已存在，无需下载")
+                                                MusicRepository.DownloadResult.ERROR -> utils.Toast.show("下载启动失败")
+
+                                            }
+                                        }
+                                    },
+                                    index = 0
+                                )
+                                DropdownImpl(
+                                    text = "删除此音乐",
+                                    optionSize = 2,
+                                    isSelected = false,
+                                    onSelectedIndexChange = { 
+                                        showMenu.value = false
+                                        showDeleteDialog.value = true
+                                    },
+                                    index = 1
+                                )
                         }
                     }
                 }
@@ -452,13 +476,14 @@ fun PlayerScreen(
                                 try {
                                     if (isFavorite) {
                                         api.removeFavorite(song.id)
+                                        repository.removeFavorite(song.id)
                                     } else {
                                         api.addFavorite(song.id)
+                                        repository.addFavorite(song.id)
                                     }
-                                    // 触发刷新
-                                    val newFavs = api.getPlaylistSongs("default").toSet()
-                                    GlobalState.updateFavorites(newFavs)
-                                    GlobalState.triggerRefresh()
+                                    
+                                    // 触发刷新 (网络侧)
+                                    // 注意：本地状态更新已由 repository.add/removeFavorite -> App.kt 监听 -> GlobalState 完成
                                 } catch (e: Throwable) {
                                     e.printStackTrace()
                                 }
@@ -501,6 +526,7 @@ fun PlayerScreen(
                             currentSong?.id?.let { sid ->
                                 val res = api.deleteFile(sid)
                                 if (res.success) {
+                                    repository.deleteLocalAudio(sid) // 同时删除本地文件
                                     GlobalState.triggerRefresh()
                                     val newList = playlist.filter { it.id != currentSong!!.id }
                                     GlobalPlayerController.setPlaylist(newList)

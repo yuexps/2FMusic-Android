@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import java.io.File
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -19,6 +20,7 @@ import model.PlaybackState
 import model.Song
 import utils.Sha256
 import androidx.media3.common.util.UnstableApi
+import utils.CoverUtil
 
 @UnstableApi
 object AndroidPlayerController : PlayerController {
@@ -116,24 +118,33 @@ object AndroidPlayerController : PlayerController {
     private fun createMediaItem(song: Song): MediaItem {
         val baseUrl = ConfigManager.getBaseUrl()
         val auth = getAuthParam()
-        val url = "$baseUrl/api/music/play/${song.id}?$auth"
         
-        val albumArtUrlArray = song.albumArt?.let {
-            val separator = if (it.contains("?")) "&" else "?"
-            val authSuffix = if (auth.isNotEmpty()) "${separator}$auth" else ""
-            if (it.startsWith("http")) it else "$baseUrl$it$authSuffix"
+        var uri: Uri? = null
+        song.localAudioPath?.let { path ->
+            utils.FileStore.getLocalPath(path)?.let { absPath ->
+                uri = Uri.fromFile(java.io.File(absPath))
+                println("[AndroidPlayerController] Playing from local file: $absPath")
+            }
         }
+        
+        if (uri == null) {
+            val url = "$baseUrl/api/music/play/${song.id}?$auth"
+            uri = Uri.parse(url)
+            println("[AndroidPlayerController] Playing from remote url: $url")
+        }
+        
+        val albumArtUrl = CoverUtil.getCoverUrl(song)
 
         val metadata = MediaMetadata.Builder()
             .setTitle(song.title ?: song.filename)
             .setArtist(song.artist ?: "未知艺术家")
             .setAlbumTitle(song.album ?: "")
-            .setArtworkUri(albumArtUrlArray?.let { Uri.parse(it) })
+            .setArtworkUri(albumArtUrl?.let { Uri.parse(it) })
             .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
             .build()
             
         return MediaItem.Builder()
-            .setUri(url)
+            .setUri(uri)
             .setMediaId(song.id)
             .setMediaMetadata(metadata)
             .build()

@@ -50,4 +50,14 @@ object FileStore {
         val path = "$baseDir/$fileName".toPath()
         return if (fs.exists(path)) path.toString() else null
     }
+
+    /**
+     * 删除本地文件
+     */
+    fun deleteFile(fileName: String) {
+        val path = "$baseDir/$fileName".toPath()
+        if (fs.exists(path)) {
+            fs.delete(path)
+        }
+    }
 }

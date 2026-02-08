@@ -60,9 +60,13 @@ class PlayerService : MediaSessionService() {
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             updateNotification()
-            if (playbackState == Player.STATE_ENDED) {
+            if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
                 stopForeground(STOP_FOREGROUND_REMOVE)
             }
+        }
+
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            updateNotification()
         }
     }
 
@@ -138,6 +142,8 @@ class PlayerService : MediaSessionService() {
                 if (result is coil.request.SuccessResult) {
                     currentArtworkBitmap = (result.drawable as? BitmapDrawable)?.bitmap
                     updateNotification() // 再次刷新通知
+                } else if (result is coil.request.ErrorResult) {
+                    println("[PlayerService] Failed to load artwork: ${result.throwable.message}")
                 }
             }
         } else if (artworkUri == null) {
@@ -179,7 +185,12 @@ class PlayerService : MediaSessionService() {
         val notification = builder.build()
 
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (isPlaying) {
+        
+        // Android 12+ 要求：如果通过 startForegroundService 启动，必须调用 startForeground。
+        // 我们在缓冲、正在播放、或者用户点击了播放但由于某种原因（如缓冲/错误）未开始播放时，都保持前台。
+        val shouldBeForeground = isPlaying || player.playWhenReady || player.playbackState == Player.STATE_BUFFERING
+        
+        if (shouldBeForeground) {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
@@ -188,10 +199,11 @@ class PlayerService : MediaSessionService() {
                 }
             } catch (e: Exception) { 
                 e.printStackTrace()
+                // 如果 startForeground 失败（例如权限问题），至少也尝试显示通知
                 manager.notify(NOTIFICATION_ID, notification)
             }
         } else {
-            // Keep notification but drop foreground
+            // 已暂停或停止，可以退出前台但保留通知
             stopForeground(STOP_FOREGROUND_DETACH)
             manager.notify(NOTIFICATION_ID, notification)
         }

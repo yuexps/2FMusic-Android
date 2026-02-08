@@ -26,9 +26,21 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        startService(Intent(this, PlayerService::class.java))
-
         val driverFactory = DatabaseDriverFactory(this)
+        
+        // 初始化文件存储
+        utils.FileStore.initialize(filesDir.absolutePath)
+        
+        // 初始化播放器控制器
+        api.AndroidPlayerController.initialize(this)
+        
+        // 初始化 Toast
+        utils.Toast.init(this.applicationContext)
+        
+        // 初始化通知帮助类
+        utils.NotificationHelper.init(this.applicationContext)
+
+        startService(Intent(this, PlayerService::class.java))
 
         setContent {
             App(driverFactory)

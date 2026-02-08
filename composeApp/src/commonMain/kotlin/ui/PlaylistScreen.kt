@@ -30,88 +30,33 @@ import top.yukonga.miuix.kmp.icon.extended.*
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import utils.BackHandler
 
+import data.MusicRepository
+
 @Composable
-fun PlaylistScreen(modifier: Modifier = Modifier) {
-    val api = remember { MusicApi() }
-    var playlists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    
+fun PlaylistScreen(
+    repository: MusicRepository,
+    modifier: Modifier = Modifier
+) {
+    // 1. 获取所有歌单 (本地全量缓存, 实时更新)
+    val playlists by repository.getAllPlaylists().collectAsState(initial = emptyList())
+
     // 详情页状态
     var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
-    var playlistSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
-    var isSongsLoading by remember { mutableStateOf(false) }
-
-    val coroutineScope = rememberCoroutineScope()
-
+    
+    // 2. 获取当前选定歌单的歌曲 (本地缓存)
+    val playlistSongs by remember(selectedPlaylist) {
+        if (selectedPlaylist == null) kotlinx.coroutines.flow.flowOf(emptyList()) 
+        else repository.getSongsInPlaylist(selectedPlaylist!!.id)
+    }.collectAsState(initial = emptyList())
+    
     // 适配安卓返回键：若处于详情页，点返回键则退回列表
     BackHandler(enabled = selectedPlaylist != null) {
         selectedPlaylist = null
     }
 
-    // 加载收藏夹列表
-    val loadPlaylists = {
-        coroutineScope.launch {
-            try {
-                isLoading = true
-                playlists = api.getFavoritePlaylists()
-                isLoading = false
-                errorMessage = null
-            } catch (e: Throwable) {
-                isLoading = false
-                errorMessage = when {
-                    e.message?.contains("401", ignoreCase = true) == true || e.message?.contains("unauthorized", ignoreCase = true) == true ->
-                        "认证失败，请在'系统'页面配置正确的密码"
-
-                    e.message?.contains("fetch", ignoreCase = true) == true || 
-                    e.message?.contains("Network", ignoreCase = true) == true || 
-                    e.message?.contains("Connection", ignoreCase = true) == true ||
-                    e.message?.contains("failed", ignoreCase = true) == true ->
-                        "服务器连接失败，请检查网络连接或后端配置"
-
-                    else -> "发生异常\n(${e.message ?: "未知错误"})"
-                }
-                e.printStackTrace()
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        loadPlaylists()
-        GlobalState.refreshSignal.collect {
-            loadPlaylists()
-            selectedPlaylist?.let { playlist ->
-                coroutineScope.launch {
-                    try {
-                        isSongsLoading = true
-                        val songIds = api.getPlaylistSongs(playlist.id)
-                        val allSongs = api.getMusicList()
-                        playlistSongs = allSongs.filter { it.id in songIds }
-                        isSongsLoading = false
-                    } catch (e: Throwable) {
-                        isSongsLoading = false
-                        println("Failed to load playlist songs: ${e.message}")
-                    }
-                }
-            }
-        }
-    }
-
-    // 处理进入收藏夹详情
+    // 处理进入歌单详情
     val onPlaylistClick: (Playlist) -> Unit = { playlist ->
         selectedPlaylist = playlist
-        coroutineScope.launch {
-            try {
-                isSongsLoading = true
-                val songIds = api.getPlaylistSongs(playlist.id)
-                val allSongs = api.getMusicList()
-                playlistSongs = allSongs.filter { it.id in songIds }
-                isSongsLoading = false
-            } catch (e: Throwable) {
-                isSongsLoading = false
-                println("Failed to load playlist songs: ${e.message}")
-            }
-        }
     }
 
     val scrollBehavior = MiuixScrollBehavior()
@@ -139,100 +84,77 @@ fun PlaylistScreen(modifier: Modifier = Modifier) {
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
         Box(Modifier.fillMaxSize().padding(innerPadding)) {
-            when {
-                isLoading -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("正在加载...")
-                    }
-                }
-                errorMessage != null -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(horizontal = 32.dp)
+            if (selectedPlaylist == null) {
+                // 显示收藏夹列表
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(playlists) { playlist ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onPlaylistClick(playlist) }
                         ) {
-                            Text(
-                                errorMessage!!, 
-                                style = TextStyle(
-                                    color = MiuixTheme.colorScheme.error,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Medium
-                                ),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                            )
-                            Spacer(Modifier.height(16.dp))
-                            Button(onClick = { loadPlaylists() }) {
-                                Text("重试")
-                            }
-                        }
-                    }
-                }
-                selectedPlaylist == null -> {
-                    // 显示收藏夹列表
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(playlists) { playlist ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onPlaylistClick(playlist) }
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
+                                // 图标区分：默认用心，其他用锁
+                                if (playlist.id == "default") {
                                     Icon(
                                         imageVector = MiuixIcons.Favorites,
                                         contentDescription = null,
                                         tint = MiuixTheme.colorScheme.primary,
                                         modifier = Modifier.size(32.dp)
                                     )
-                                    Spacer(Modifier.width(16.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(playlist.name, style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Medium))
-                                        Text(
-                                            "${playlist.songCount} 首歌曲" + if (playlist.isDefault == 1) " · 默认" else "",
-                                            style = TextStyle(fontSize = 14.sp, color = Color.Gray)
-                                        )
-                                    }
+                                } else {
                                     Icon(
-                                        imageVector = MiuixIcons.ChevronForward,
-                                        contentDescription = null,
-                                        tint = Color.LightGray
+                                        imageVector = MiuixIcons.Lock,
+                                        contentDescription = "Read Only",
+                                        tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(32.dp)
                                     )
                                 }
+                                
+                                Spacer(Modifier.width(16.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(playlist.name, style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Medium))
+                                    Text(
+                                        "${playlist.songCount} 首歌曲" + if (playlist.isDefault == 1) " · 默认" else "",
+                                        style = TextStyle(fontSize = 14.sp, color = Color.Gray)
+                                    )
+                                }
+                                Icon(
+                                    imageVector = MiuixIcons.ChevronForward,
+                                    contentDescription = null,
+                                    tint = Color.LightGray
+                                )
                             }
                         }
                     }
                 }
-                else -> {
-                    // 显示收藏夹内歌曲列表
-                    if (isSongsLoading) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("正在加载歌曲...")
-                        }
-                    } else if (playlistSongs.isEmpty()) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("收藏夹为空")
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(playlistSongs) { song ->
-                                SongItem(
-                                    song = song,
-                                    onClick = {
-                                        GlobalPlayerController.setPlaylist(playlistSongs)
-                                        GlobalPlayerController.play(song)
-                                    }
-                                )
-                            }
+            } else {
+                // 显示歌单内歌曲列表
+                if (playlistSongs.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("暂无歌曲或正在同步...")
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(playlistSongs) { song ->
+                            SongItem(
+                                song = song,
+                                onClick = {
+                                    GlobalPlayerController.setPlaylist(playlistSongs)
+                                    GlobalPlayerController.play(song)
+                                }
+                            )
                         }
                     }
                 }

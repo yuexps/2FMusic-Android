@@ -46,7 +46,9 @@ fun MusicListScreen(
                 mtime = entity.mtime ?: 0.0,
                 size = entity.size ?: 0L,
                 hasCover = if (entity.hasCover == 1L) 1 else 0,
-                albumArt = entity.albumArt
+                albumArt = entity.albumArt,
+                localCoverPath = entity.localCoverPath,
+                localLyricsPath = entity.localLyricsPath
             )
         }
     }
