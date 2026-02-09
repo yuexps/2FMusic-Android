@@ -5,9 +5,9 @@ actual object NotificationHelper {
         // No-op for web
     }
 
-    actual fun showProgress(id: Int, title: String, content: String, progress: Int, max: Int) {
+    actual fun showProgress(id: Int, title: String, content: String, progress: Int, max: Int, ongoing: Boolean) {
         if (progress % 10 == 0) { // Log sparingly to console
-            utils.Logger.i("Download", "正在下载 $title: $progress/$max")
+            utils.Logger.i("Download", "正在下载 $title: $progress/$max (ongoing=$ongoing)")
         }
     }
 

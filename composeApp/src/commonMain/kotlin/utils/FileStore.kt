@@ -5,7 +5,7 @@ import okio.Path.Companion.toPath
 import okio.buffer
 
 object FileStore {
-    private val fs = FileSystem.SYSTEM
+    private val fs = platformFileSystem
     private var baseDir: String = ""
 
     fun initialize(dir: String) {
@@ -18,8 +18,11 @@ object FileStore {
      */
     fun saveFile(fileName: String, data: ByteArray) {
         val path = "$baseDir/$fileName".toPath()
-        fs.write(path) {
-            write(data)
+        val sink = fs.sink(path).buffer()
+        try {
+            sink.write(data)
+        } finally {
+            sink.close()
         }
     }
 
@@ -28,8 +31,11 @@ object FileStore {
      */
     fun saveLyrics(songId: String, lyrics: String) {
         val path = "$baseDir/lyrics_$songId.lrc".toPath()
-        fs.write(path) {
-            writeUtf8(lyrics)
+        val sink = fs.sink(path).buffer()
+        try {
+            sink.writeUtf8(lyrics)
+        } finally {
+            sink.close()
         }
     }
 
@@ -38,8 +44,11 @@ object FileStore {
      */
     fun saveCover(songId: String, data: ByteArray) {
         val path = "$baseDir/cover_$songId.jpg".toPath()
-        fs.write(path) {
-            write(data)
+        val sink = fs.sink(path).buffer()
+        try {
+            sink.write(data)
+        } finally {
+            sink.close()
         }
     }
 
@@ -48,9 +57,13 @@ object FileStore {
      */
     fun readLyrics(songId: String): String? {
         val path = "$baseDir/lyrics_$songId.lrc".toPath()
-        return if (fs.exists(path)) {
-            fs.source(path).use { it.buffer().readUtf8() }
-        } else null
+        if (!fs.exists(path)) return null
+        val source = fs.source(path).buffer()
+        return try {
+            source.readUtf8()
+        } finally {
+            source.close()
+        }
     }
 
     /**
@@ -84,16 +97,18 @@ object FileStore {
      */
     fun log(message: String) {
         val path = "$baseDir/info.log".toPath()
+        var sink: okio.BufferedSink? = null
         try {
-            fs.appendingSink(path).buffer().use { 
-                it.writeUtf8("[${getCurrentTime()}] $message\n")
+            sink = try {
+                fs.appendingSink(path).buffer()
+            } catch (e: Exception) {
+                fs.sink(path).buffer()
             }
+            sink.writeUtf8("[${getCurrentTime()}] $message\n")
         } catch (e: Exception) {
-            try {
-                fs.write(path) {
-                    writeUtf8("[${getCurrentTime()}] $message\n")
-                }
-            } catch (ignore: Exception) {}
+            // 忽略写入错误
+        } finally {
+            try { sink?.close() } catch (ignore: Exception) {}
         }
     }
 

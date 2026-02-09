@@ -29,7 +29,7 @@ fun main() {
     utils.Logger.i("WasmMain", "Wasm main started")
     FileStore.initialize("web_cache")
     val driverFactory = DatabaseDriverFactory()
-    CanvasBasedWindow("2FMusic") {
+    ComposeViewport(viewportContainerId = "composeApplication") {
         val fontFamilyResolver = LocalFontFamilyResolver.current
         val fontsLoaded = remember { mutableStateOf(false) }
 
@@ -54,7 +54,7 @@ fun main() {
                 utils.Logger.i("WasmMain", "hiding HTML loading")
             }
             hideLoading()
-            App()
+            App(driverFactory)
         } else {
             // 在 Compose 内部显示一个临时的白色背景或简单文字，避免白屏
             Box(Modifier.fillMaxSize()) {
