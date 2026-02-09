@@ -83,29 +83,24 @@ fun PlayerScreen(
     val dismissThreshold = with(density) { 150.dp.toPx() }
     val showDeleteDialog = remember { mutableStateOf(false) }
 
-    // 当歌曲改变时加载歌词
+    // 当歌曲改变时加载歌词与封面持久化
     LaunchedEffect(currentSong) {
         currentSong?.let { song ->
+            utils.FileStore.log("[Player] 歌曲变更: ${song.title} (ID: ${song.id})")
             isLoadingLyrics = true
             lyrics = emptyList()
             try {
-                // 1. 尝试从本地读取
+                // 1. 触发后台持久化任务 (如果缺失)
+                launch { repository.ensureCoverDownloaded(song) }
+                repository.ensureLyricsDownloaded(song)
+                
+                // 2. 读取及显示
                 val localLrc = utils.FileStore.readLyrics(song.id)
                 if (localLrc != null) {
-                    println("[PlayerScreen] 命中本地歌词缓存: ${song.id}")
                     lyrics = LrcParser.parse(localLrc)
-                } else {
-                    // 2. 本地没有，则从网络获取
-                    val query = "?title=${song.title ?: ""}&artist=${song.artist ?: ""}"
-                    val response = api.getLyrics(query)
-                    if (response.success && response.lyrics != null) {
-                        lyrics = LrcParser.parse(response.lyrics)
-                        // 顺便保存到本地
-                        utils.FileStore.saveLyrics(song.id, response.lyrics)
-                    }
                 }
             } catch (e: Throwable) {
-                println("[PlayerScreen] 歌词加载失败: ${e.message}")
+                println("[PlayerScreen] 媒体资源加载失败: ${e.message}")
             } finally {
                 isLoadingLyrics = false
             }

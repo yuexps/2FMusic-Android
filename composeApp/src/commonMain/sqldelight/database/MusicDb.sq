@@ -67,6 +67,14 @@ UPDATE SongEntity
 SET localAudioPath = ?
 WHERE id = ?;
 
+-- 仅更新封面路径
+updateCoverPath:
+UPDATE SongEntity SET localCoverPath = ? WHERE id = ?;
+
+-- 仅更新歌词路径
+updateLyricsPath:
+UPDATE SongEntity SET localLyricsPath = ? WHERE id = ?;
+
 
 
 -- 全量歌单缓存 (新)

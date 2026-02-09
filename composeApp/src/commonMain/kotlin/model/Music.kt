@@ -59,6 +59,14 @@ data class MountPoint(
     val createdAt: Double? = null
 )
 
+@Serializable
+data class AlbumArtResponse(
+    val success: Boolean,
+    @SerialName("album_art")
+    val albumArt: String? = null,
+    val error: String? = null
+)
+
 
 @Serializable
 data class SystemStatus(

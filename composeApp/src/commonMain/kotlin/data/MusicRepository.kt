@@ -295,46 +295,89 @@ class MusicRepository(
             var updatedLyricsPath: String? = null
             var needsUpdate = false
 
-            // 1. 同步封面
-            if (song.hasCover != 0 && song.albumArt != null) {
-                val fileName = "cover_${song.id}.jpg"
-                if (utils.FileStore.getLocalPath(fileName) == null) {
-                    try {
-                        val bytes = api.downloadFile(song.albumArt)
-                        utils.FileStore.saveFile(fileName, bytes)
-                        updatedCoverPath = fileName
-                        needsUpdate = true
-                    } catch (e: Exception) {
-                        println("[MusicRepository] 封面下载失败: ${song.title}")
-                    }
-                } else {
-                    updatedCoverPath = fileName
-                }
+            // 1. 同步封面 - 仅检查是否存在，不主动下载
+            if (utils.FileStore.getCoverPath(song.id) != null) {
+                updatedCoverPath = "cover_${song.id}.jpg"
             }
 
-            // 2. 同步歌词
-            if (utils.FileStore.readLyrics(song.id) == null) {
-                try {
-                    val query = "?title=${song.title ?: ""}&artist=${song.artist ?: ""}"
-                    val response = api.getLyrics(query)
-                    if (response.success && response.lyrics != null) {
-                        utils.FileStore.saveLyrics(song.id, response.lyrics)
-                        updatedLyricsPath = "lyrics_${song.id}.lrc"
-                        needsUpdate = true
-                    }
-                } catch (e: Exception) {
-                    // 歌词下载失败不视为致命错误，可能真的没歌词
-                }
-            } else {
+            // 2. 同步歌词 - 仅检查是否存在，不主动下载
+            if (utils.FileStore.readLyrics(song.id) != null) {
                 updatedLyricsPath = "lyrics_${song.id}.lrc"
             }
 
-            // 3. 只要发现了本地文件，就强制同步一次数据库状态（容错处理）
+            // 3. 同步数据库状态
             queries.updateCoverAndLyrics(
                 localCoverPath = updatedCoverPath,
                 localLyricsPath = updatedLyricsPath,
                 id = song.id
             )
+        }
+    }
+
+    /**
+     * 确保封面已持久化下载 (播放时触发)
+     */
+    suspend fun ensureCoverDownloaded(song: Song) = withContext(Dispatchers.Default) {
+        if (utils.FileStore.getCoverPath(song.id) == null) {
+            utils.FileStore.log("[Cover] 开始验证封面: ${song.title}")
+            try {
+                // 1. 尝试直接从 Song 对象获取已有链接
+                var targetUrl = song.albumArt
+                
+                if (targetUrl != null) {
+                    utils.FileStore.log("[Cover] 使用歌曲元数据中的链接: $targetUrl")
+                } else {
+                    // 2. 如果元数据没有链接，尝试通过接口查找
+                    utils.FileStore.log("[Cover] 元数据无链接，调用接口查找...")
+                    val response = api.getAlbumArt(
+                        title = song.title ?: "",
+                        artist = song.artist ?: "",
+                        filename = song.filename ?: ""
+                    )
+                    utils.FileStore.log("[Cover] 接口返回: success=${response.success}, url=${response.albumArt}")
+                    if (response.success && response.albumArt != null) {
+                        targetUrl = response.albumArt
+                    }
+                }
+
+                if (targetUrl != null) {
+                    val bytes = api.downloadFile(targetUrl)
+                    utils.FileStore.log("[Cover] 下载数据成功: ${bytes.size} bytes")
+                    utils.FileStore.saveCover(song.id, bytes)
+                    queries.updateCoverPath("cover_${song.id}.jpg", song.id)
+                    utils.FileStore.log("[Cover] 持久化及数据库更新完成")
+                } else {
+                    utils.FileStore.log("[Cover] 未找到可用封面链接")
+                }
+            } catch (e: Exception) {
+                utils.FileStore.log("[Cover] 异常: ${e.message}")
+                println("[MusicRepository] 封面持久化失败: ${song.title}, error: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * 确保歌词已持久化下载 (播放时触发)
+     */
+    suspend fun ensureLyricsDownloaded(song: Song) = withContext(Dispatchers.Default) {
+        if (utils.FileStore.readLyrics(song.id) == null) {
+            utils.FileStore.log("[Lyrics] 开始验证歌词: ${song.title}")
+            try {
+                val response = api.getLyrics(
+                    title = song.title ?: "",
+                    artist = song.artist ?: ""
+                )
+                utils.FileStore.log("[Lyrics] 接口返回: success=${response.success}, hasContent=${response.lyrics != null}")
+                
+                if (response.success && response.lyrics != null) {
+                    utils.FileStore.saveLyrics(song.id, response.lyrics)
+                    queries.updateLyricsPath("lyrics_${song.id}.lrc", song.id)
+                    utils.FileStore.log("[Lyrics] 持久化及数据库更新完成")
+                }
+            } catch (e: Exception) {
+                utils.FileStore.log("[Lyrics] 异常: ${e.message}")
+                println("[MusicRepository] 歌词持久化失败: ${song.title}, error: ${e.message}")
+            }
         }
     }
 

@@ -65,14 +65,21 @@ class MusicApi {
     }
 
     // --- 歌词 & 封面 ---
-    suspend fun getLyrics(query: String): LyricsResponse {
-        val response: LyricsResponse = client.get("$baseUrl/api/music/lyrics$query").body()
+    suspend fun getLyrics(title: String, artist: String): LyricsResponse {
+        val response: LyricsResponse = client.get("$baseUrl/api/music/lyrics") {
+            parameter("title", title)
+            parameter("artist", artist)
+        }.body()
         if (!response.success) throw Exception(response.message ?: "Lyrics fetch failed")
         return response
     }
 
-    suspend fun getAlbumArt(query: String): ApiResponse<String> {
-        return client.get("$baseUrl/api/music/album-art$query").body()
+    suspend fun getAlbumArt(title: String, artist: String, filename: String): model.AlbumArtResponse {
+        return client.get("$baseUrl/api/music/album-art") {
+            parameter("title", title)
+            parameter("artist", artist)
+            parameter("filename", filename)
+        }.body()
     }
 
     // --- 挂载点 ---
