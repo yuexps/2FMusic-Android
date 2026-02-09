@@ -44,7 +44,7 @@ class WasmPlayerController : PlayerController {
             duration.value = (audio.duration * 1000).toLong()
         }
         audio.addEventListener("error") {
-            println("[WasmPlayer] Audio error occurred")
+            utils.Logger.e("WasmPlayer", "音频播放出错")
             playbackState.value = PlaybackState.ERROR
         }
     }
@@ -76,7 +76,7 @@ class WasmPlayerController : PlayerController {
              songUrl += "?auth=$hash"
         }
         
-        println("[WasmPlayer] Playing: $songUrl")
+        utils.Logger.i("WasmPlayer", "正在播放: $songUrl")
         audio.src = songUrl
         audio.play()
         

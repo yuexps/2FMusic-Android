@@ -13,8 +13,10 @@ import app.cash.sqldelight.coroutines.mapToList
 import database.DatabaseDriverFactory
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import utils.Toast
-import utils.NotificationHelper
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import utils.IODispatcher
+import utils.getTimeMillis
 
 class MusicRepository(
     private val api: MusicApi,
@@ -22,12 +24,13 @@ class MusicRepository(
 ) {
     private val database = MusicDb(driverFactory.createDriver())
     private val queries = database.musicDbQueries
+    private val syncMutex = Mutex()
 
     /**
      * 获取本地所有歌曲的 Flow 流
      */
     fun getLocalSongs(): Flow<List<SongEntity>> {
-        return queries.getAllSongs().asFlow().mapToList(Dispatchers.Default)
+        return queries.getAllSongs().asFlow().mapToList(IODispatcher)
     }
 
     /**
@@ -38,14 +41,7 @@ class MusicRepository(
      */
     fun getFavorites(): Flow<Set<String>> {
         // 使用 getPlaylistSongIds 查询 default 歌单
-        return queries.getPlaylistSongIds("default").asFlow().mapToList(Dispatchers.Default).map { it.toSet() }
-    }
-
-    /**
-     * 获取收藏歌曲详情的 Flow 流 (适配新表)
-     */
-    fun getFavoriteSongs(): Flow<List<Song>> {
-        return getSongsInPlaylist("default")
+        return queries.getPlaylistSongIds("default").asFlow().mapToList(IODispatcher).map { it.toSet() }
     }
 
     /**
@@ -70,18 +66,16 @@ class MusicRepository(
      * 获取指定歌单内的歌曲 (本地缓存)
      */
     fun getSongsInPlaylist(playlistId: String): Flow<List<Song>> {
-        return queries.getSongsInPlaylist(playlistId).asFlow().mapToList(Dispatchers.Default).map { entities ->
+        return queries.getSongsInPlaylist(playlistId).asFlow().mapToList(IODispatcher).map { entities ->
             entities.map { entity ->
                 Song(
                     id = entity.id,
-                    path = entity.path,
                     filename = entity.filename,
                     title = entity.title,
                     artist = entity.artist,
                     album = entity.album,
                     mtime = entity.mtime,
                     size = entity.size,
-                    hasCover = if (entity.hasCover == 1L) 1 else 0,
                     albumArt = entity.albumArt,
                     localCoverPath = entity.localCoverPath,
                     localLyricsPath = entity.localLyricsPath,
@@ -108,23 +102,13 @@ class MusicRepository(
     /**
      * 将远程收藏状态同步到本地数据库
      */
-    /**
-     * 将远程收藏状态同步到本地数据库 (废弃，保留空实现或兼容)
-     * 新逻辑集成在 syncPlaylists 中
-     */
-    suspend fun updateLocalFavorites(ids: Set<String>) = withContext(Dispatchers.Default) {
-        // 兼容旧调用：同步到 default 歌单
-        queries.transaction {
-            queries.removeAllSongsFromPlaylist("default")
-            ids.forEach { queries.addSongToPlaylist("default", it) }
-        }
-    }
 
     /**
-     * 核心同步逻辑：本地差分更新
+     * 核心同步逻辑：本地差分更新 (增加并发锁)
      */
-    suspend fun sync() = withContext(Dispatchers.Default) {
-        try {
+    suspend fun sync() = syncMutex.withLock {
+        withContext(Dispatchers.Default) {
+            try {
             // 1. 获取服务器最新版本
             val status = api.getSystemStatus()
             val remoteVersion = status.libraryVersion.toString()
@@ -133,11 +117,11 @@ class MusicRepository(
             val localVersion = queries.getMetadata("last_library_version").executeAsOneOrNull()?.value_
             
             if (localVersion == remoteVersion) {
-                println("[MusicRepository] 库版本一致，跳过全量同步")
+                utils.Logger.i("MusicRepository", "库版本一致，跳过全量同步")
                 return@withContext
             }
 
-            println("[MusicRepository] 版本变更: $localVersion -> $remoteVersion, 开始差分同步...")
+            utils.Logger.i("MusicRepository", "版本变更: $localVersion -> $remoteVersion, 开始差分同步...")
 
             // 3. 拉取全量列表
             val remoteSongs = api.getMusicList()
@@ -152,14 +136,12 @@ class MusicRepository(
                     
                     queries.insertSong(
                         id = song.id,
-                        path = song.path,
                         filename = song.filename,
                         title = song.title,
                         artist = song.artist,
                         album = song.album,
                         mtime = song.mtime,
                         size = song.size,
-                        hasCover = if (song.hasCover != 0) 1L else 0L,
                         albumArt = song.albumArt,
                         localCoverPath = existing?.localCoverPath, // 保留本地路径
                         localLyricsPath = existing?.localLyricsPath, // 保留本地路径
@@ -178,34 +160,40 @@ class MusicRepository(
             
             // 5. 更新本地版本戳
             queries.insertMetadata("last_library_version", remoteVersion)
-            println("[MusicRepository] 数据同步完成，当前版本: $remoteVersion")
+            utils.Logger.i("MusicRepository", "数据同步完成，当前版本: $remoteVersion")
 
             // 6. 后台同步媒体文件
             syncMedia(remoteSongs)
 
             // 7. 同步所有歌单
-            syncPlaylists()
+            internalSyncPlaylists()
 
         } catch (e: Exception) {
-            println("[MusicRepository] 同步失败: ${e.message}")
+            utils.Logger.e("MusicRepository", "同步失败", e)
             throw e
+            }
         }
     }
 
     /**
-     * 同步歌单及其歌曲
+     * 同步歌单及其歌曲 (增加并发锁)
      */
-    suspend fun syncPlaylists() = withContext(Dispatchers.Default) {
+    suspend fun syncPlaylists() = syncMutex.withLock {
+        internalSyncPlaylists()
+    }
+
+    private suspend fun internalSyncPlaylists() = withContext(IODispatcher) {
         try {
-            println("[MusicRepository] 开始同步歌单...")
+            utils.Logger.i("MusicRepository", "开始同步歌单列表...")
             
             // 1. 获取自定义歌单列表
             val playlists = api.getFavoritePlaylists()
+            utils.Logger.i("MusicRepository", "获取到远程歌单列表，共 ${playlists.size} 个歌单")
             
             // 2. 获取默认收藏夹歌曲 (API 支持 getPlaylistSongs("default"))
             val defaultFavIds = try {
                 api.getPlaylistSongs("default")
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 emptyList()
             }
 
@@ -236,7 +224,8 @@ class MusicRepository(
             }
             
             // 5. 同步默认收藏夹歌曲
-            syncPlaylistSongs("default", "我的收藏", defaultFavIds)
+            syncPlaylistSongs("default", defaultFavIds)
+            utils.Logger.i("MusicRepository", "歌单 [我的收藏] 同备完成，包含 ${defaultFavIds.size} 首歌曲")
 
             // 6. 同步每个自定义歌单的歌曲
             playlists.forEach { playlist ->
@@ -244,15 +233,16 @@ class MusicRepository(
                 if (playlist.id != "default") {
                     try {
                         val songIds = api.getPlaylistSongs(playlist.id)
-                        syncPlaylistSongs(playlist.id, playlist.name, songIds)
+                        syncPlaylistSongs(playlist.id, songIds)
+                        utils.Logger.i("MusicRepository", "歌单 [${playlist.name}] 同步完成，包含 ${songIds.size} 首歌曲")
                     } catch (e: Exception) {
-                        println("[MusicRepository] 歌单 [${playlist.name}] 同步失败: ${e.message}")
+                        utils.Logger.e("MusicRepository", "歌单 [${playlist.name}] 同步失败", e)
                     }
                 }
             }
-            println("[MusicRepository] 歌单同步完成")
+            utils.Logger.i("MusicRepository", "所有歌单同步工作已完成")
         } catch (e: Exception) {
-            println("[MusicRepository] 歌单列表获取失败: ${e.message}")
+            utils.Logger.e("MusicRepository", "歌单列表同步过程中发生异常", e)
         }
     }
 
@@ -270,11 +260,11 @@ class MusicRepository(
                 isDefault = 1,
                 createdAt = 0.0
             )
-            println("[MusicRepository] 创建默认收藏夹占位")
+            utils.Logger.i("MusicRepository", "创建默认收藏夹占位")
         }
     }
 
-    private fun syncPlaylistSongs(playlistId: String, playlistName: String, songIds: List<String>) {
+    private fun syncPlaylistSongs(playlistId: String, songIds: List<String>) {
         queries.transaction {
             queries.removeAllSongsFromPlaylist(playlistId)
             songIds.forEach { songId ->
@@ -293,7 +283,6 @@ class MusicRepository(
         songs.forEach { song ->
             var updatedCoverPath: String? = null
             var updatedLyricsPath: String? = null
-            var needsUpdate = false
 
             // 1. 同步封面 - 仅检查是否存在，不主动下载
             if (utils.FileStore.getCoverPath(song.id) != null) {
@@ -319,22 +308,22 @@ class MusicRepository(
      */
     suspend fun ensureCoverDownloaded(song: Song) = withContext(Dispatchers.Default) {
         if (utils.FileStore.getCoverPath(song.id) == null) {
-            utils.FileStore.log("[Cover] 开始验证封面: ${song.title}")
+            utils.Logger.i("Cover", "开始验证封面: ${song.title}")
             try {
                 // 1. 尝试直接从 Song 对象获取已有链接
                 var targetUrl = song.albumArt
                 
                 if (targetUrl != null) {
-                    utils.FileStore.log("[Cover] 使用歌曲元数据中的链接: $targetUrl")
+                    utils.Logger.i("Cover", "使用歌曲元数据中的链接: $targetUrl")
                 } else {
                     // 2. 如果元数据没有链接，尝试通过接口查找
-                    utils.FileStore.log("[Cover] 元数据无链接，调用接口查找...")
+                    utils.Logger.i("Cover", "元数据无链接，调用接口查找...")
                     val response = api.getAlbumArt(
                         title = song.title ?: "",
                         artist = song.artist ?: "",
                         filename = song.filename ?: ""
                     )
-                    utils.FileStore.log("[Cover] 接口返回: success=${response.success}, url=${response.albumArt}")
+                    utils.Logger.i("Cover", "接口返回: 成功=${response.success}, 链接=${response.albumArt}")
                     if (response.success && response.albumArt != null) {
                         targetUrl = response.albumArt
                     }
@@ -342,16 +331,16 @@ class MusicRepository(
 
                 if (targetUrl != null) {
                     val bytes = api.downloadFile(targetUrl)
-                    utils.FileStore.log("[Cover] 下载数据成功: ${bytes.size} bytes")
+                    val sizeMB = (bytes.size * 10 / 1024 / 1024).toDouble() / 10.0
+                    utils.Logger.i("Cover", "封面下载成功: [${song.title}], 大小: ${sizeMB}MB")
                     utils.FileStore.saveCover(song.id, bytes)
                     queries.updateCoverPath("cover_${song.id}.jpg", song.id)
-                    utils.FileStore.log("[Cover] 持久化及数据库更新完成")
+                    utils.Logger.i("Cover", "封面持久化及数据库更新完成: [${song.title}]")
                 } else {
-                    utils.FileStore.log("[Cover] 未找到可用封面链接")
+                    utils.Logger.i("Cover", "未找到歌曲 [${song.title}] 的可用封面链接")
                 }
             } catch (e: Exception) {
-                utils.FileStore.log("[Cover] 异常: ${e.message}")
-                println("[MusicRepository] 封面持久化失败: ${song.title}, error: ${e.message}")
+                utils.Logger.e("Cover", "封面持久化失败: ${song.title}", e)
             }
         }
     }
@@ -361,27 +350,26 @@ class MusicRepository(
      */
     suspend fun ensureLyricsDownloaded(song: Song) = withContext(Dispatchers.Default) {
         if (utils.FileStore.readLyrics(song.id) == null) {
-            utils.FileStore.log("[Lyrics] 开始验证歌词: ${song.title}")
+            utils.Logger.i("Lyrics", "开始验证歌词: ${song.title}")
             try {
                 val response = api.getLyrics(
                     title = song.title ?: "",
                     artist = song.artist ?: ""
                 )
-                utils.FileStore.log("[Lyrics] 接口返回: success=${response.success}, hasContent=${response.lyrics != null}")
+                utils.Logger.i("Lyrics", "接口返回: 成功=${response.success}, 是否有内容=${response.lyrics != null}")
                 
                 if (response.success && response.lyrics != null) {
                     utils.FileStore.saveLyrics(song.id, response.lyrics)
                     queries.updateLyricsPath("lyrics_${song.id}.lrc", song.id)
-                    utils.FileStore.log("[Lyrics] 持久化及数据库更新完成")
+                    utils.Logger.i("Lyrics", "歌词持久化及数据库更新完成: [${song.title}]")
                 }
             } catch (e: Exception) {
-                utils.FileStore.log("[Lyrics] 异常: ${e.message}")
-                println("[MusicRepository] 歌词持久化失败: ${song.title}, error: ${e.message}")
+                utils.Logger.e("Lyrics", "歌词持久化失败: ${song.title}", e)
             }
         }
     }
 
-    private val downloadScope = kotlinx.coroutines.CoroutineScope(Dispatchers.Default + kotlinx.coroutines.SupervisorJob())
+    private val downloadScope = kotlinx.coroutines.CoroutineScope(IODispatcher + kotlinx.coroutines.SupervisorJob())
 
     enum class DownloadResult {
         STARTED,
@@ -399,36 +387,77 @@ class MusicRepository(
         }
 
         downloadScope.launch {
+            utils.Logger.i("Audio", "开始下载: ${song.title} (ID: ${song.id})")
             try {
                 // 获取下载 URL
                 val notificationId = song.id.hashCode()
                 
+                // 立即开启一个初始通知，告知用户下载已经开始
+                utils.NotificationHelper.showProgress(
+                    id = notificationId,
+                    title = "准备下载: ${song.title}",
+                    content = "正在连接服务器...",
+                    progress = 0,
+                    max = 0 // 初始显示模糊进度条
+                )
+                
+                var lastNotifyTime = 0L
                 // 下载 (api.downloadFile 内部会自动处理 header auth)
                 val bytes = api.downloadFile("/api/music/play/${song.id}") { sent, total ->
-                     if (total > 0) {
-                         val progress = (sent * 100 / total).toInt()
-                         utils.NotificationHelper.showProgress(
-                             id = notificationId,
-                             title = "正在下载: ${song.title}",
-                             content = "$progress%",
-                             progress = progress,
-                             max = 100
-                         )
+                     val now = getTimeMillis()
+                     val isFinished = total > 0 && sent == total
+                     
+                     // 节流处理：每 200ms 更新一次通知，或者是最后一次更新
+                     val shouldNotify = isFinished || ((now - lastNotifyTime) >= 200L)
+                     if (shouldNotify) {
+                         lastNotifyTime = now
+                         if (total > 0) {
+                             val progress = (sent * 100 / total).toInt()
+                             // 使用 0.1MB 精度显示
+                             val sentMB = (sent * 10 / 1024 / 1024).toDouble() / 10.0
+                             val totalMB = (total * 10 / 1024 / 1024).toDouble() / 10.0
+                             utils.NotificationHelper.showProgress(
+                                 id = notificationId,
+                                 title = "正在下载: ${song.title}",
+                                 content = "$progress% (${sentMB}MB / ${totalMB}MB)",
+                                 progress = progress,
+                                 max = 100
+                             )
+                         } else {
+                             // 未知大小时显示模糊进度条，统一使用 MB
+                             val sentMB = (sent * 10 / 1024 / 1024).toDouble() / 10.0
+                             utils.NotificationHelper.showProgress(
+                                 id = notificationId,
+                                 title = "正在下载: ${song.title}",
+                                 content = "已接收: ${sentMB}MB",
+                                 progress = 0,
+                                 max = 0
+                             )
+                         }
                      }
                 }
                 
-                // 下载完成，取消进度通知
-                utils.NotificationHelper.cancel(notificationId)
-                utils.Toast.show("${song.title} 下载完成")
-                
+                val sizeMB = (bytes.size * 10 / 1024 / 1024).toDouble() / 10.0
+                utils.Logger.i("Audio", "音频下载成功: [${song.title}], 大小: ${sizeMB}MB，准备保存...")
                 // 保存
                 utils.FileStore.saveFile(fileName, bytes)
                 
                 // 更新数据库
                 queries.updateAudioPath(fileName, song.id)
-                println("[MusicRepository] 歌曲下载完成: ${song.title}")
+                utils.Logger.i("Audio", "音频保存并更新数据库完成: [${song.title}] ($fileName)")
+                
+                // 成功后显示完成状态
+                utils.NotificationHelper.showProgress(
+                    id = notificationId,
+                    title = "下载完成: ${song.title}",
+                    content = "文件已保存至本地",
+                    progress = 100,
+                    max = 100,
+                    ongoing = false
+                )
+                utils.Toast.show("${song.title} 下载完成")
             } catch (e: Exception) {
-                println("[MusicRepository] 歌曲下载失败: ${e.message}")
+                utils.Logger.e("Audio", "下载/保存异常: ${e.message}", e)
                 e.printStackTrace()
                 utils.Toast.show("${song.title} 下载失败")
                 utils.NotificationHelper.cancel(song.id.hashCode())
@@ -438,7 +467,7 @@ class MusicRepository(
         return DownloadResult.STARTED
     }
 
-    suspend fun deleteLocalAudio(songId: String) = withContext(Dispatchers.Default) {
+    suspend fun deleteLocalAudio(songId: String) = withContext(IODispatcher) {
         val song: SongEntity? = queries.getSongById(songId).executeAsOneOrNull()
         song?.localAudioPath?.let { path ->
             utils.FileStore.deleteFile(path)

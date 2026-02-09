@@ -139,7 +139,7 @@ fun PlaylistScreen(
                 // 显示歌单内歌曲列表
                 if (playlistSongs.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("暂无歌曲或正在同步...")
+                        Text("加载中...")
                     }
                 } else {
                     LazyColumn(
@@ -151,7 +151,9 @@ fun PlaylistScreen(
                             SongItem(
                                 song = song,
                                 onClick = {
-                                    GlobalPlayerController.setPlaylist(playlistSongs)
+                                    if (GlobalPlayerController.playlist.value != playlistSongs) {
+                                        GlobalPlayerController.setPlaylist(playlistSongs)
+                                    }
                                     GlobalPlayerController.play(song)
                                 }
                             )
@@ -177,16 +179,8 @@ fun SongItem(song: Song, onClick: () -> Unit) {
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 封面（复用逻辑）
-            val hash = ConfigManager.getPasswordHash()
-            val authSuffix = if (hash != null) {
-                val separator = if (song.albumArt?.contains("?") == true) "&" else "?"
-                "${separator}auth=$hash"
-            } else ""
-            
-            val albumArtUrl = song.albumArt?.let {
-                if (it.startsWith("http")) it else "${ConfigManager.getBaseUrl()}$it$authSuffix"
-            }
+            // 封面加载逻辑：优先尝试本地缓存 -> 远程服务器
+            val albumArtUrl = utils.CoverUtil.getCoverUrl(song)
             
             if (albumArtUrl != null) {
                 AutoSizeImage(

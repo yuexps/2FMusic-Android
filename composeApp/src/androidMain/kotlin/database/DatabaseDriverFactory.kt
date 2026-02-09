@@ -6,6 +6,9 @@ import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 
 actual class DatabaseDriverFactory(private val context: Context) {
     actual fun createDriver(): SqlDriver {
-        return AndroidSqliteDriver(MusicDb.Schema, context, "music.db")
+        val databasePath = context.getExternalFilesDir(null)?.let { 
+            java.io.File(it, "music.db").absolutePath 
+        } ?: "music.db"
+        return AndroidSqliteDriver(MusicDb.Schema, context, databasePath)
     }
 }

@@ -26,7 +26,7 @@ private const val MiSansRegular = "./MiSans-Regular.woff2"
 
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
-    println("Wasm main started")
+    utils.Logger.i("WasmMain", "Wasm main started")
     FileStore.initialize("web_cache")
     val driverFactory = DatabaseDriverFactory()
     CanvasBasedWindow("2FMusic") {
@@ -34,25 +34,24 @@ fun main() {
         val fontsLoaded = remember { mutableStateOf(false) }
 
         LaunchedEffect(Unit) {
-            println("LaunchedEffect started, loading font: $MiSansRegular")
+            utils.Logger.i("WasmMain", "LaunchedEffect started, loading font: $MiSansRegular")
             try {
                 val miSansBytes = loadRes(MiSansRegular).toByteArray()
-                println("Font bytes loaded: ${miSansBytes.size}")
+                utils.Logger.i("WasmMain", "Font bytes loaded: ${miSansBytes.size}")
                 val fontFamily = FontFamily(Font("MiSans", miSansBytes))
                 fontFamilyResolver.preload(fontFamily)
-                println("Font preloaded successfully")
+                utils.Logger.i("WasmMain", "Font preloaded successfully")
             } catch (e: Throwable) {
-                println("Font loading failed: ${e.message}")
-                e.printStackTrace()
+                utils.Logger.e("WasmMain", "Font loading failed", e)
             } finally {
                 fontsLoaded.value = true
-                println("fontsLoaded set to true")
+                utils.Logger.i("WasmMain", "fontsLoaded set to true")
             }
         }
 
         if (fontsLoaded.value) {
             SideEffect {
-                println("hiding HTML loading")
+                utils.Logger.i("WasmMain", "hiding HTML loading")
             }
             hideLoading()
             App()

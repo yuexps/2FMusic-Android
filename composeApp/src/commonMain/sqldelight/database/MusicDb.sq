@@ -1,13 +1,11 @@
 CREATE TABLE SongEntity (
     id TEXT PRIMARY KEY NOT NULL,
-    path TEXT,
     filename TEXT,
     title TEXT,
     artist TEXT,
     album TEXT,
     mtime REAL,
     size INTEGER,
-    hasCover INTEGER DEFAULT 0,
     albumArt TEXT,
     localCoverPath TEXT,
     localLyricsPath TEXT,
@@ -32,8 +30,8 @@ SELECT * FROM SongEntity WHERE id = ?;
 
 -- 插入或更新
 insertSong:
-INSERT OR REPLACE INTO SongEntity(id, path, filename, title, artist, album, mtime, size, hasCover, albumArt, localCoverPath, localLyricsPath, localAudioPath)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO SongEntity(id, filename, title, artist, album, mtime, size, albumArt, localCoverPath, localLyricsPath, localAudioPath)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- 删除特定歌曲
 deleteSongById:

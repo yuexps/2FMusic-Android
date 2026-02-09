@@ -65,8 +65,7 @@ fun SystemScreen(modifier: Modifier = Modifier) {
                 e.message?.contains("unauthorized", ignoreCase = true) == true -> "认证失败，请配置正确的密码"
                 else -> "无法连接到服务器"
             }
-            println("Failed to fetch system status: ${e.message}")
-            e.printStackTrace()
+            utils.Logger.e("SystemScreen", "无法获取系统状态", e)
         } finally {
             isInitialLoading = false
         }

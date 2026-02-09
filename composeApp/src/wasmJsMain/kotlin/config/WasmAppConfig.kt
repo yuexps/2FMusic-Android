@@ -54,7 +54,7 @@ actual object ConfigManager : AppConfig {
             val json = Json.encodeToString(state)
             localStorage[KEY_PLAYBACK_STATE] = json
         } catch (e: Exception) {
-            println("[WasmAppConfig] Failed to save playback state: ${e.message}")
+            utils.Logger.e("WasmAppConfig", "保存播放状态失败", e)
         }
     }
 

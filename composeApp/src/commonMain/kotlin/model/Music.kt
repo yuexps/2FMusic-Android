@@ -7,15 +7,12 @@ import kotlinx.serialization.SerialName
 @Serializable
 data class Song(
     val id: String = "",
-    val path: String? = null,
     val filename: String? = null,
     val title: String? = null,
     val artist: String? = null,
     val album: String? = null,
     val mtime: Double? = null,
     val size: Long? = null,
-    @SerialName("has_cover")
-    val hasCover: Int = 0,
     @SerialName("album_art")
     val albumArt: String? = null,
     val localCoverPath: String? = null,

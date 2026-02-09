@@ -89,8 +89,6 @@ object FileStore {
                 it.writeUtf8("[${getCurrentTime()}] $message\n")
             }
         } catch (e: Exception) {
-            // 如果文件不存在，appendingSink 可能会失败或自动创建取决于实现，
-            // 兜底逻辑：如果不存在则直接创建并写入
             try {
                 fs.write(path) {
                     writeUtf8("[${getCurrentTime()}] $message\n")
@@ -100,8 +98,6 @@ object FileStore {
     }
 
     private fun getCurrentTime(): String {
-        // 由于在 commonMain 中，无法使用 java.text.SimpleDateFormat
-        // 简单返回一个标识，或者如果需要精确时间，可以配合平台实现
-        return "LOG" 
+        return formatTime(getTimeMillis())
     }
 }

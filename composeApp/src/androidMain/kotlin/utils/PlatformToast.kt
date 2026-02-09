@@ -17,6 +17,6 @@ actual object Toast {
             handler.post {
                 android.widget.Toast.makeText(ctx, message, android.widget.Toast.LENGTH_SHORT).show()
             }
-        } ?: println("Toast context not initialized: $message")
+        } ?: utils.Logger.e("Toast", "Toast 上下文未初始化: $message")
     }
 }

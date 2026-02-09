@@ -86,7 +86,7 @@ fun PlayerScreen(
     // 当歌曲改变时加载歌词与封面持久化
     LaunchedEffect(currentSong) {
         currentSong?.let { song ->
-            utils.FileStore.log("[Player] 歌曲变更: ${song.title} (ID: ${song.id})")
+            utils.Logger.i("Player", "歌曲变更: ${song.title} (ID: ${song.id})")
             isLoadingLyrics = true
             lyrics = emptyList()
             try {
@@ -97,10 +97,10 @@ fun PlayerScreen(
                 // 2. 读取及显示
                 val localLrc = utils.FileStore.readLyrics(song.id)
                 if (localLrc != null) {
-                    lyrics = LrcParser.parse(localLrc)
+                    lyrics = LrcParser.parse(localLrc, song.title)
                 }
             } catch (e: Throwable) {
-                println("[PlayerScreen] 媒体资源加载失败: ${e.message}")
+                utils.Logger.e("PlayerScreen", "媒体资源加载失败", e)
             } finally {
                 isLoadingLyrics = false
             }
@@ -175,7 +175,7 @@ fun PlayerScreen(
                                         showMenu.value = false
                                         currentSong?.let { song ->
                                             utils.Toast.show("开始下载: ${song.title}")
-                                            println("[PlayerScreen] Start downloading ${song.title}")
+                                            utils.Logger.i("PlayerScreen", "开始下载: ${song.title}")
                                             val result = repository.downloadMusic(song)
                                             when (result) {
                                                 MusicRepository.DownloadResult.STARTED -> { /* Toast already shown */ }
@@ -406,7 +406,7 @@ fun PlayerScreen(
                             .size(56.dp)
                             .clip(RoundedCornerShape(28.dp))
                             .clickable {
-                                println("[PlayerScreen] Previous button clicked")
+                                utils.Logger.i("PlayerScreen", "点击上一曲按钮")
                                 GlobalPlayerController.previous()
                             },
                         contentAlignment = Alignment.Center
@@ -451,7 +451,7 @@ fun PlayerScreen(
                             .size(56.dp)
                             .clip(RoundedCornerShape(28.dp))
                             .clickable {
-                                println("[PlayerScreen] Next button clicked")
+                                utils.Logger.i("PlayerScreen", "点击下一曲按钮")
                                 GlobalPlayerController.next()
                             },
                         contentAlignment = Alignment.Center

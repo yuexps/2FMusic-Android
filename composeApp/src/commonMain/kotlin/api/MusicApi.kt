@@ -26,9 +26,9 @@ class MusicApi {
         }
 
         install(HttpTimeout) {
-            requestTimeoutMillis = 15000
-            connectTimeoutMillis = 15000
-            socketTimeoutMillis = 15000
+            requestTimeoutMillis = 5000
+            connectTimeoutMillis = 3000
+            socketTimeoutMillis = 5000
         }
 
         // 在所有请求中自动添加 X-Password header
@@ -128,6 +128,11 @@ class MusicApi {
     suspend fun downloadFile(url: String, onProgress: ((bytesSentTotal: Long, contentLength: Long) -> Unit)? = null): ByteArray {
         val fullUrl = if (url.startsWith("http")) url else "$baseUrl$url"
         val response = client.get(fullUrl) {
+            timeout {
+                requestTimeoutMillis = 300000 // 5 分钟下载时长限制
+                connectTimeoutMillis = 15000  // 15 秒连接超时
+                socketTimeoutMillis = 60000   // 1 分钟无数据传输限制
+            }
             onDownload { bytesSentTotal, contentLength ->
                 onProgress?.invoke(bytesSentTotal, contentLength ?: 0L)
             }

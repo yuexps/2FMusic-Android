@@ -38,17 +38,16 @@ fun MusicListScreen(
         songsEntities.map { entity ->
             Song(
                 id = entity.id,
-                path = entity.path ?: "",
                 filename = entity.filename,
                 title = entity.title,
                 artist = entity.artist,
                 album = entity.album,
                 mtime = entity.mtime ?: 0.0,
                 size = entity.size ?: 0L,
-                hasCover = if (entity.hasCover == 1L) 1 else 0,
                 albumArt = entity.albumArt,
                 localCoverPath = entity.localCoverPath,
-                localLyricsPath = entity.localLyricsPath
+                localLyricsPath = entity.localLyricsPath,
+                localAudioPath = entity.localAudioPath
             )
         }
     }
@@ -183,7 +182,9 @@ fun MusicListScreen(
                                         song = song,
                                         currentSong = currentSong,
                                         onClick = {
-                                            GlobalPlayerController.setPlaylist(filteredSongs)
+                                            if (GlobalPlayerController.playlist.value != filteredSongs) {
+                                                GlobalPlayerController.setPlaylist(filteredSongs)
+                                            }
                                             GlobalPlayerController.play(song)
                                         }
                                     )
@@ -191,17 +192,6 @@ fun MusicListScreen(
                             }
                         }
                     }
-                }
-            }
-
-            // 顶部同步状态提示（仅在有数据且有错误时显示）
-            if (songs.isNotEmpty()) {
-                if (errorMessage != null) {
-                    Text(
-                        "同步失败: $errorMessage",
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                        style = TextStyle(fontSize = 12.sp, color = MiuixTheme.colorScheme.error)
-                    )
                 }
             }
 
@@ -214,7 +204,7 @@ fun MusicListScreen(
                                 Modifier.fillMaxSize().weight(1f),
                                 contentAlignment = androidx.compose.ui.Alignment.Center
                             ) {
-                                Text("正在首次拉取音乐库...")
+                                Text("加载中...")
                             }
                         }
                         errorMessage != null -> {
@@ -261,7 +251,9 @@ fun MusicListScreen(
                                 song = song,
                                 currentSong = currentSong,
                                 onClick = {
-                                    GlobalPlayerController.setPlaylist(songs)
+                                    if (GlobalPlayerController.playlist.value != songs) {
+                                        GlobalPlayerController.setPlaylist(songs)
+                                    }
                                     GlobalPlayerController.play(song)
                                 }
                             )
