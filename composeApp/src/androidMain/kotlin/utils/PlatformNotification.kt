@@ -7,12 +7,15 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 
 
-actual object NotificationHelper {
+class AndroidNotificationHelper : NotificationHelper {
+    companion object {
+        private const val CHANNEL_ID = "download_channel"
+        private const val CHANNEL_NAME = "Download Progress"
+    }
+    
     private var context: Context? = null
-    private const val CHANNEL_ID = "download_channel"
-    private const val CHANNEL_NAME = "Download Progress"
 
-    actual fun init(ctx: Any) {
+    override fun init(ctx: Any) {
         if (ctx is Context) {
             context = ctx
             createNotificationChannel()
@@ -26,7 +29,7 @@ actual object NotificationHelper {
         notificationManager?.createNotificationChannel(channel)
     }
 
-    actual fun showProgress(id: Int, title: String, content: String, progress: Int, max: Int, ongoing: Boolean) {
+    override fun showProgress(id: Int, title: String, content: String, progress: Int, max: Int, ongoing: Boolean) {
         val context = context ?: return
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(if (ongoing) android.R.drawable.stat_sys_download else android.R.drawable.stat_sys_download_done)
@@ -49,7 +52,7 @@ actual object NotificationHelper {
         notificationManager?.notify(id, builder.build())
     }
 
-    actual fun showMessage(id: Int, title: String, content: String) {
+    override fun showMessage(id: Int, title: String, content: String) {
         val context = context ?: return
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
@@ -62,7 +65,7 @@ actual object NotificationHelper {
         notificationManager?.notify(id, builder.build())
     }
 
-    actual fun cancel(id: Int) {
+    override fun cancel(id: Int) {
         val notificationManager = context?.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         notificationManager?.cancel(id)
     }

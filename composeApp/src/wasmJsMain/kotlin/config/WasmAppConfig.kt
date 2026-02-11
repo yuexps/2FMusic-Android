@@ -8,31 +8,35 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString
 
-actual object ConfigManager : AppConfig {
-    private const val KEY_BASE_URL = "app_base_url"
-    private const val KEY_PASSWORD = "app_password"
-    private const val KEY_PLAYBACK_STATE = "playback_state"
-    private const val DEFAULT_BASE_URL = "http://localhost:23237"
+import utils.Platform
+
+class WasmAppConfig : AppConfig {
+    companion object {
+        private const val KEY_BASE_URL = "app_base_url"
+        private const val KEY_PASSWORD = "app_password"
+        private const val KEY_PLAYBACK_STATE = "playback_state"
+        private const val DEFAULT_BASE_URL = "http://localhost:23237"
+    }
     
     private var cachedHash: String? = null
     
-    actual override fun initialize(context: Any?) {
+    override fun initialize(context: Any?) {
         // No-op for Wasm
     }
     
-    actual override fun getBaseUrl(): String {
+    override fun getBaseUrl(): String {
         return localStorage[KEY_BASE_URL] ?: DEFAULT_BASE_URL
     }
     
-    actual override fun setBaseUrl(url: String) {
+    override fun setBaseUrl(url: String) {
         localStorage[KEY_BASE_URL] = url.trimEnd('/')
     }
     
-    actual override fun getPassword(): String? {
+    override fun getPassword(): String? {
         return localStorage[KEY_PASSWORD]
     }
     
-    actual override fun setPassword(password: String?) {
+    override fun setPassword(password: String?) {
         cachedHash = null // 清除缓存
         if (password.isNullOrBlank()) {
             localStorage.removeItem(KEY_PASSWORD)
@@ -41,7 +45,7 @@ actual object ConfigManager : AppConfig {
         }
     }
 
-    actual override fun getPasswordHash(): String? {
+    override fun getPasswordHash(): String? {
         val password = getPassword() ?: return null
         if (cachedHash == null) {
             cachedHash = utils.Sha256.hash(password)
@@ -49,16 +53,16 @@ actual object ConfigManager : AppConfig {
         return cachedHash
     }
 
-    actual override fun savePlaybackState(state: PlaybackStateData) {
+    override fun savePlaybackState(state: PlaybackStateData) {
         try {
             val json = Json.encodeToString(state)
             localStorage[KEY_PLAYBACK_STATE] = json
         } catch (e: Exception) {
-            utils.Logger.e("WasmAppConfig", "保存播放状态失败", e)
+            Platform.logger.e("WasmAppConfig", "保存播放状态失败", e)
         }
     }
 
-    actual override fun loadPlaybackState(): PlaybackStateData? {
+    override fun loadPlaybackState(): PlaybackStateData? {
         val json = localStorage[KEY_PLAYBACK_STATE] ?: return null
         return try {
             Json.decodeFromString<PlaybackStateData>(json)

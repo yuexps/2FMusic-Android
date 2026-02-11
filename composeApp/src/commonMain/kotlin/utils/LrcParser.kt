@@ -8,7 +8,7 @@ data class LrcLine(
 object LrcParser {
     fun parse(lrcText: String, title: String? = null): List<LrcLine> {
         val displayTitle = if (title != null) " [$title]" else ""
-        utils.Logger.i("LrcParser", "开始解析歌词$displayTitle, 长度: ${lrcText.length}")
+        Platform.logger.i("LrcParser", "开始解析歌词$displayTitle, 长度: ${lrcText.length}")
         
         val lines = lrcText.split("\n")
         // 使用 Map 收集同一时间戳的所有歌词行
@@ -58,7 +58,7 @@ object LrcParser {
             LrcLine(time, lines)
         }.sortedBy { it.time }
 
-        utils.Logger.i("LrcParser", "歌词解析完成$displayTitle, 共 ${lrcLines.size} 个时间戳, ${timeMap.values.sumOf { it.size }} 行歌词")
+        Platform.logger.i("LrcParser", "歌词解析完成$displayTitle,共 ${lrcLines.size} 个时间戳,${timeMap.values.sumOf { it.size }} 行歌词")
         return lrcLines
     }
 

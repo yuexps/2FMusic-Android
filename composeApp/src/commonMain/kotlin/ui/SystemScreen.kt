@@ -1,6 +1,7 @@
 package ui
 
 import androidx.compose.foundation.layout.*
+import utils.Platform
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -65,7 +66,7 @@ fun SystemScreen(modifier: Modifier = Modifier) {
                 e.message?.contains("unauthorized", ignoreCase = true) == true -> "认证失败，请配置正确的密码"
                 else -> "无法连接到服务器"
             }
-            utils.Logger.e("SystemScreen", "无法获取系统状态", e)
+            Platform.logger.e("SystemScreen", "无法获取系统状态", e)
         } finally {
             isInitialLoading = false
         }
@@ -152,8 +153,8 @@ fun SystemScreen(modifier: Modifier = Modifier) {
                     .padding(horizontal = 16.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    var baseUrl by remember { mutableStateOf(config.ConfigManager.getBaseUrl()) }
-                    var password by remember { mutableStateOf(config.ConfigManager.getPassword() ?: "") }
+                    var baseUrl by remember { mutableStateOf(Platform.config.getBaseUrl()) }
+                    var password by remember { mutableStateOf(Platform.config.getPassword() ?: "") }
                     var showSuccess by remember { mutableStateOf(false) }
                     var passwordVisible by remember { mutableStateOf(false) }
                     val coroutineScope = rememberCoroutineScope()
@@ -192,8 +193,8 @@ fun SystemScreen(modifier: Modifier = Modifier) {
                     
                     Button(
                         onClick = {
-                            config.ConfigManager.setBaseUrl(baseUrl)
-                            config.ConfigManager.setPassword(password.ifBlank { null })
+                            Platform.config.setBaseUrl(baseUrl)
+                            Platform.config.setPassword(password.ifBlank { null })
                             showSuccess = true
                             // 主动触发全局刷新，使各页面重新拉取数据
                             GlobalState.triggerRefresh()

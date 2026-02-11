@@ -1,9 +1,5 @@
 package utils
 
-interface PlatformToast {
-    fun show(message: String)
-}
-
-expect object Toast {
+interface Toast {
     fun show(message: String)
 }

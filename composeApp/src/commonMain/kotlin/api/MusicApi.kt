@@ -1,6 +1,4 @@
 package api
-
-import config.ConfigManager
 import io.ktor.client.call.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -10,9 +8,11 @@ import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
 import model.*
 
+import utils.Platform
+
 class MusicApi {
     private val baseUrl: String
-        get() = ConfigManager.getBaseUrl()
+        get() = Platform.config.getBaseUrl()
 
     private val client = httpClient {
         expectSuccess = true // 强制校验 HTTP 状态码，401 等错误将抛出 ClientRequestException
@@ -32,7 +32,7 @@ class MusicApi {
 
         // 在所有请求中自动添加 X-Password header
         defaultRequest {
-            val hash = ConfigManager.getPasswordHash()
+            val hash = Platform.config.getPasswordHash()
             if (hash != null) {
                 header("X-Password", hash)
             }

@@ -15,14 +15,13 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import config.ConfigManager
+import utils.Platform
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import model.PlayMode
 import model.PlaybackState
 import model.Song
-import utils.Sha256
 import utils.CoverUtil
 
 object AndroidPlayerController : PlayerController {
@@ -48,7 +47,7 @@ object AndroidPlayerController : PlayerController {
         val baseDataSourceFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
             
-        ConfigManager.getPasswordHash()?.let { hash ->
+        Platform.config.getPasswordHash()?.let { hash ->
             baseDataSourceFactory.setDefaultRequestProperties(mapOf("X-Password" to hash))
         }
         
@@ -112,11 +111,11 @@ object AndroidPlayerController : PlayerController {
                             }
                         }
 
-                        utils.Logger.e("Player", "播放器错误: 代码=${error.errorCode}, 消息=${error.message}", error)
+                        Platform.logger.e("Player", "播放器错误: 代码=${error.errorCode}, 消息=${error.message}", error)
                         
                         // 发送 Toast 和通知栏提醒
-                        utils.Toast.show(errorMessage)
-                        utils.NotificationHelper.showMessage(
+                        Platform.toast.show(errorMessage)
+                        Platform.notification.showMessage(
                             id = song?.id?.hashCode() ?: 999,
                             title = "播放异常",
                             content = errorMessage
@@ -149,29 +148,29 @@ object AndroidPlayerController : PlayerController {
     override val currentIndex: StateFlow<Int> = MutableStateFlow(-1)
 
     private fun getAuthParam(): String {
-        val password = ConfigManager.getPassword()
-        return if (password != null) "auth=${Sha256.hash(password)}" else ""
+        val password = Platform.config.getPassword()
+        return if (password != null) "auth=${utils.Sha256.hash(password)}" else ""
     }
 
     private fun createMediaItem(song: Song, verbose: Boolean = false): MediaItem {
-        val baseUrl = ConfigManager.getBaseUrl()
+        val baseUrl = Platform.config.getBaseUrl()
         val auth = getAuthParam()
         
         var uri: Uri? = null
         song.localAudioPath?.let { path ->
-            if (verbose) utils.Logger.i("Audio", "数据库中有本地路径: $path")
+            if (verbose) Platform.logger.i("Audio", "数据库中有本地路径: $path")
             utils.FileStore.getLocalPath(path)?.let { absPath ->
                 uri = Uri.fromFile(java.io.File(absPath))
-                if (verbose) utils.Logger.i("Audio", "文件存在于: $absPath。使用本地 URI。")
+                if (verbose) Platform.logger.i("Audio", "文件存在于: $absPath。使用本地 URI。")
             } ?: run {
-                if (verbose) utils.Logger.i("Audio", "未在预期位置找到文件，路径: $path")
+                if (verbose) Platform.logger.i("Audio", "未在预期位置找到文件，路径: $path")
             }
         }
         
         if (uri == null) {
             val url = "$baseUrl/api/music/play/${song.id}?$auth"
             uri = Uri.parse(url)
-            if (verbose) utils.Logger.i("Audio", "回退到远程 URL: $url")
+            if (verbose) Platform.logger.i("Audio", "回退到远程 URL: $url")
         }
         
         val mimeType = when {
@@ -202,23 +201,23 @@ object AndroidPlayerController : PlayerController {
     }
 
     override fun play(song: Song) {
-        utils.Logger.i("Audio", "play(song): ${song.title} (ID: ${song.id})")
+        Platform.logger.i("Audio", "play(song): ${song.title} (ID: ${song.id})")
         val index = _currentPlaylist.indexOfFirst { it.id == song.id }
         if (index != -1) {
-            utils.Logger.i("Player", "在现有播放列表中找到索引 $index")
+            Platform.logger.i("Player", "在现有播放列表中找到索引 $index")
             
             // 关键：检查当前播放队列里的 MediaItem 是否需要更新（例如从远程 URL 变为本地路径）
             val newMediaItem = createMediaItem(song, verbose = true)
             val currentMediaItem = try { player.getMediaItemAt(index) } catch (e: Exception) { null }
             
             if (currentMediaItem != null && newMediaItem.localConfiguration?.uri != currentMediaItem.localConfiguration?.uri) {
-                utils.Logger.i("Audio", "正在将索引 $index 处的媒体项更新为本地化 URI。")
+                Platform.logger.i("Audio", "正在将索引 $index 处的媒体项更新为本地化 URI。")
                 player.replaceMediaItem(index, newMediaItem)
             }
             
             playAtIndex(index)
         } else {
-            utils.Logger.i("Player", "不在播放列表中，设为单曲播放")
+            Platform.logger.i("Player", "不在播放列表中，设为单曲播放")
             val mediaItem = createMediaItem(song, verbose = true)
             player.setMediaItem(mediaItem)
             player.prepare()
@@ -239,13 +238,13 @@ object AndroidPlayerController : PlayerController {
                 val intent = Intent(context, Class.forName("top.msfxp.music.PlayerService"))
                 context.startForegroundService(intent)
             } catch (e: Exception) {
-                utils.Logger.e("Player", "启动服务失败", e)
+                Platform.logger.e("Player", "启动服务失败", e)
             }
         }
     }
     private fun ensurePrepared() {
         if (player.playbackState == Player.STATE_IDLE) {
-            utils.Logger.i("Player", "播放器处于 IDLE 状态，执行 prepare()")
+            Platform.logger.i("Player", "播放器处于 IDLE 状态，执行 prepare()")
             player.prepare()
         }
     }
@@ -267,12 +266,12 @@ object AndroidPlayerController : PlayerController {
     }
 
     override fun next() {
-        utils.Logger.i("Player", "next() 被调用。hasNext=${player.hasNextMediaItem()}, 列表大小=${_currentPlaylist.size}")
+        Platform.logger.i("Player", "next() 被调用。hasNext=${player.hasNextMediaItem()}, 列表大小=${_currentPlaylist.size}")
         if (player.hasNextMediaItem()) {
             player.seekToNext()
         } else if (_currentPlaylist.isNotEmpty()) {
             // 列表结尾, 循环回第一首
-            utils.Logger.i("Player", "next() 循环回到索引 0")
+            Platform.logger.i("Player", "next() 循环回到索引 0")
             player.seekTo(0, 0)
         }
         ensurePrepared()
@@ -282,12 +281,12 @@ object AndroidPlayerController : PlayerController {
     }
 
     override fun previous() {
-        utils.Logger.i("Player", "previous() 被调用。hasPrevious=${player.hasPreviousMediaItem()}, 列表大小=${_currentPlaylist.size}")
+        Platform.logger.i("Player", "previous() 被调用。hasPrevious=${player.hasPreviousMediaItem()}, 列表大小=${_currentPlaylist.size}")
         if (player.hasPreviousMediaItem()) {
             player.seekToPrevious()
         } else if (_currentPlaylist.isNotEmpty()) {
             // 列表开头, 循环到最后一首
-            utils.Logger.i("Player", "previous() 循环到索引 ${_currentPlaylist.size - 1}")
+            Platform.logger.i("Player", "previous() 循环到索引 ${_currentPlaylist.size - 1}")
             player.seekTo(_currentPlaylist.size - 1, 0)
         }
         ensurePrepared()
@@ -328,7 +327,7 @@ object AndroidPlayerController : PlayerController {
             songs.forEachIndexed { index, song ->
                 val oldSong = _currentPlaylist[index]
                 if (song.localAudioPath != oldSong.localAudioPath) {
-                    utils.Logger.i("Audio", "索引 $index 处的歌曲 [${song.title}] 路径已更新，执行热替换。")
+                    Platform.logger.i("Audio", "索引 $index 处的歌曲 [${song.title}] 路径已更新，执行热替换。")
                     val newItem = createMediaItem(song)
                     player.replaceMediaItem(index, newItem)
                 }
@@ -338,7 +337,7 @@ object AndroidPlayerController : PlayerController {
             return
         }
 
-        utils.Logger.i("Audio", "setPlaylist: 包含 ${songs.size} 首歌曲")
+        Platform.logger.i("Audio", "setPlaylist: 包含 ${songs.size} 首歌曲")
         _currentPlaylist = songs
         (playlist as MutableStateFlow<List<Song>>).value = songs
         val mediaItems = songs.map { createMediaItem(it) }
@@ -370,7 +369,7 @@ object AndroidPlayerController : PlayerController {
                         (this@AndroidPlayerController.progress as MutableStateFlow<Float>).value = pos.toFloat() / dur.toFloat()
                         
                         // 每 10 秒保存一次进度
-                        if ((utils.getTimeMillis() % 10000L) < 500L) {
+                        if ((Platform.getTimeMillis() % 10000L) < 500L) {
                             saveState()
                         }
                     }
@@ -402,11 +401,11 @@ object AndroidPlayerController : PlayerController {
             playlist = _currentPlaylist,
             playMode = playMode.value
         )
-        ConfigManager.savePlaybackState(data)
+        Platform.config.savePlaybackState(data)
     }
 
     private fun restoreState() {
-        val data = ConfigManager.loadPlaybackState() ?: return
+        val data = Platform.config.loadPlaybackState() ?: return
         
         // 1. 恢复播放模式
         setPlayMode(data.playMode)

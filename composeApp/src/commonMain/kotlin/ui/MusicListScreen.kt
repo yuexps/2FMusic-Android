@@ -33,24 +33,7 @@ fun MusicListScreen(
     repository: MusicRepository,
     modifier: Modifier = Modifier
 ) {
-    val songsEntities by repository.getLocalSongs().collectAsState(initial = emptyList())
-    val songs = remember(songsEntities) {
-        songsEntities.map { entity ->
-            Song(
-                id = entity.id,
-                filename = entity.filename,
-                title = entity.title,
-                artist = entity.artist,
-                album = entity.album,
-                mtime = entity.mtime ?: 0.0,
-                size = entity.size ?: 0L,
-                albumArt = entity.albumArt,
-                localCoverPath = entity.localCoverPath,
-                localLyricsPath = entity.localLyricsPath,
-                localAudioPath = entity.localAudioPath
-            )
-        }
-    }
+    val songs by repository.getLocalSongs().collectAsState(initial = emptyList())
     
     var isSyncing by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -232,7 +215,7 @@ fun MusicListScreen(
                                             scope.launch { syncSongs() }
                                         }
                                     ) {
-                                        Text("同步")
+                                        Text("重试")
                                     }
                                 }
                             }

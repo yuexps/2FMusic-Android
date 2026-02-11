@@ -1,5 +1,8 @@
 package top.msfxp.music.shared
 
+import data.MusicRepository
+import data.DownloadResult
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -27,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
+import utils.BackHandler
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -53,14 +57,12 @@ import ui.MusicListScreen
 import ui.PlayerScreen
 import ui.PlaylistScreen
 import ui.SystemScreen
-import utils.BackHandler
-
-import database.DatabaseDriverFactory
-import data.MusicRepository
+import utils.PlatformDependencies
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun App(driverFactory: DatabaseDriverFactory) {
+fun App(platform: PlatformDependencies) {
+    val repository = platform.repository
     var selectedIndex by remember { mutableIntStateOf(0) }
     var showPlayerScreen by remember { mutableStateOf(false) }
     val isDarkTheme = isSystemInDarkTheme()
@@ -74,7 +76,6 @@ fun App(driverFactory: DatabaseDriverFactory) {
     }
 
     val api = remember { MusicApi() }
-    val repository = remember { MusicRepository(api, driverFactory) }
 
     val playlist by GlobalPlayerController.playlist.collectAsState()
     val showPlaylistState by GlobalState.showPlaylistState.collectAsState()

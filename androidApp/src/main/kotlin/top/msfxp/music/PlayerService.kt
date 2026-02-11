@@ -16,6 +16,7 @@ import androidx.media3.common.util.UnstableApi
 import coil.imageLoader
 import coil.request.ImageRequest
 import kotlinx.coroutines.*
+import api.AndroidPlayerController
 
 class PlayerService : MediaSessionService() {
     private var mediaSession: MediaSession? = null

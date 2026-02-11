@@ -20,7 +20,6 @@ import api.MusicApi
 import api.GlobalState
 import api.GlobalPlayerController
 import com.seiko.imageloader.ui.AutoSizeImage
-import config.ConfigManager
 import kotlinx.coroutines.launch
 import model.Playlist
 import model.Song

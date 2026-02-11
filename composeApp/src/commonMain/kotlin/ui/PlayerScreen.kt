@@ -50,9 +50,10 @@ import top.yukonga.miuix.kmp.extra.SuperListPopup
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
-import utils.Toast
+import utils.Platform
 
 import data.MusicRepository
+import data.DownloadResult
 
 @Composable
 fun PlayerScreen(
@@ -86,7 +87,7 @@ fun PlayerScreen(
     // 当歌曲改变时加载歌词与封面持久化
     LaunchedEffect(currentSong) {
         currentSong?.let { song ->
-            utils.Logger.i("Player", "歌曲变更: ${song.title} (ID: ${song.id})")
+            Platform.logger.i("Player", "歌曲变更: ${song.title} (ID: ${song.id})")
             isLoadingLyrics = true
             lyrics = emptyList()
             try {
@@ -100,7 +101,7 @@ fun PlayerScreen(
                     lyrics = LrcParser.parse(localLrc, song.title)
                 }
             } catch (e: Throwable) {
-                utils.Logger.e("PlayerScreen", "媒体资源加载失败", e)
+                Platform.logger.e("PlayerScreen", "媒体资源加载失败", e)
             } finally {
                 isLoadingLyrics = false
             }
@@ -174,13 +175,13 @@ fun PlayerScreen(
                                     onSelectedIndexChange = {
                                         showMenu.value = false
                                         currentSong?.let { song ->
-                                            utils.Toast.show("开始下载: ${song.title}")
-                                            utils.Logger.i("PlayerScreen", "开始下载: ${song.title}")
+                                            Platform.toast.show("开始下载: ${song.title}")
+                                            Platform.logger.i("PlayerScreen", "开始下载: ${song.title}")
                                             val result = repository.downloadMusic(song)
                                             when (result) {
-                                                MusicRepository.DownloadResult.STARTED -> { /* Toast already shown */ }
-                                                MusicRepository.DownloadResult.EXISTS -> utils.Toast.show("已存在，无需下载")
-                                                MusicRepository.DownloadResult.ERROR -> utils.Toast.show("下载启动失败")
+                                                DownloadResult.STARTED -> { /* Toast already shown */ }
+                                                DownloadResult.EXISTS -> Platform.toast.show("已存在，无需下载")
+                                                DownloadResult.ERROR -> Platform.toast.show("下载启动失败")
 
                                             }
                                         }
@@ -406,7 +407,7 @@ fun PlayerScreen(
                             .size(56.dp)
                             .clip(RoundedCornerShape(28.dp))
                             .clickable {
-                                utils.Logger.i("PlayerScreen", "点击上一曲按钮")
+                                Platform.logger.i("PlayerScreen", "点击上一曲按钮")
                                 GlobalPlayerController.previous()
                             },
                         contentAlignment = Alignment.Center
@@ -451,7 +452,7 @@ fun PlayerScreen(
                             .size(56.dp)
                             .clip(RoundedCornerShape(28.dp))
                             .clickable {
-                                utils.Logger.i("PlayerScreen", "点击下一曲按钮")
+                                Platform.logger.i("PlayerScreen", "点击下一曲按钮")
                                 GlobalPlayerController.next()
                             },
                         contentAlignment = Alignment.Center
@@ -518,22 +519,34 @@ fun PlayerScreen(
                     text = "确认",
                     onClick = {
                         scope.launch {
-                            currentSong?.id?.let { sid ->
+                            val songToDelete = currentSong ?: return@launch
+                            val songTitle = songToDelete.title ?: songToDelete.filename ?: "未知音乐"
+                            val sid = songToDelete.id
+
+                            Platform.logger.i("PlayerScreen", "用户确认删除音乐: $songTitle (ID: $sid)")
+                            try {
                                 val res = api.deleteFile(sid)
                                 if (res.success) {
+                                    Platform.logger.i("PlayerScreen", "删除成功: $songTitle")
                                     repository.deleteLocalAudio(sid) // 同时删除本地文件
                                     GlobalState.triggerRefresh()
-                                    val newList = playlist.filter { it.id != currentSong!!.id }
+                                    val newList = playlist.filter { it.id != sid }
                                     GlobalPlayerController.setPlaylist(newList)
-                                    if (newList.isNotEmpty()) {
-                                        GlobalPlayerController.next()
-                                    } else {
-                                        GlobalPlayerController.stop()
-                                        onClose()
-                                    }
+                                    
+                                    // 删除后停止播放并返回列表
+                                    GlobalPlayerController.stop()
+                                    onClose()
+                                    
+                                    Platform.toast.show("已删除：$songTitle")
+                                } else {
+                                    Platform.logger.e("PlayerScreen", "删除失败: 服务端返回失败")
+                                    Platform.toast.show("删除失败：$songTitle")
                                 }
-                                showDeleteDialog.value = false
+                            } catch (e: Exception) {
+                                Platform.logger.e("PlayerScreen", "删除异常", e)
+                                Platform.toast.show("删除发生错误：$songTitle")
                             }
+                            showDeleteDialog.value = false
                         }
                     },
                     modifier = Modifier.weight(1f),

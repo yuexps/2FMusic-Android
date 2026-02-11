@@ -11,6 +11,7 @@ import model.Song
 import org.w3c.dom.HTMLAudioElement
 import okio.Path.Companion.toPath
 import okio.buffer
+import utils.Platform
 
 class WasmPlayerController : PlayerController {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -42,18 +43,18 @@ class WasmPlayerController : PlayerController {
             playbackState.value = PlaybackState.PAUSED
         }
         audio.addEventListener("ended") {
-            utils.Logger.i("WasmPlayer", "音频播放结束，准备下一曲")
+            Platform.logger.i("WasmPlayer", "音频播放结束，准备下一曲")
             next()
         }
         audio.addEventListener("loadedmetadata") {
             duration.value = (audio.duration * 1000).toLong()
-            utils.Logger.i("WasmPlayer", "元数据加载完成，时长: ${duration.value}ms")
+            Platform.logger.i("WasmPlayer", "元数据加载完成，时长: ${duration.value}ms")
         }
         audio.addEventListener("error") {
             val song = currentSong.value
             val error = audio.error
             val msg = "播放器错误: 代码=${error?.code}"
-            utils.Logger.e("WasmPlayer", msg)
+            Platform.logger.e("WasmPlayer", msg)
             
             val displayMessage = if (song != null) {
                 "播放歌曲 [${song.title}] 失败"
@@ -61,8 +62,8 @@ class WasmPlayerController : PlayerController {
                 "播放异常"
             }
             
-            utils.Toast.show(displayMessage)
-            utils.NotificationHelper.showMessage(
+            Platform.toast.show(displayMessage)
+            Platform.notification.showMessage(
                 id = song?.id?.hashCode() ?: 999,
                 title = "播放失败",
                 content = displayMessage
@@ -100,7 +101,7 @@ class WasmPlayerController : PlayerController {
         
         if (localPath != null) {
             try {
-                utils.Logger.i("WasmPlayer", "尝试播放本地文件: $localPath")
+                Platform.logger.i("WasmPlayer", "尝试播放本地文件: $localPath")
                 val path = localPath.toPath()
                 if (fs.exists(path)) {
                     val source = fs.source(path).buffer()
@@ -112,14 +113,14 @@ class WasmPlayerController : PlayerController {
                     val mimeType = getMimeType(song.filename) ?: "audio/mpeg"
                     val blobUrl = jsCreateBlobUrl(bytes.toJsArray(), mimeType)
                     currentBlobUrl = blobUrl
-                    utils.Logger.i("WasmPlayer", "使用 Blob URL 播放: $blobUrl")
+                    Platform.logger.i("WasmPlayer", "使用 Blob URL 播放: $blobUrl")
                     audio.src = blobUrl
                 } else {
-                    utils.Logger.i("WasmPlayer", "本地路径存在但文件不存在: $localPath，回推到远程")
+                    Platform.logger.i("WasmPlayer", "本地路径存在但文件不存在: $localPath，回推到远程")
                     audio.src = getRemoteUrl(song)
                 }
             } catch (e: Exception) {
-                utils.Logger.e("WasmPlayer", "读取本地文件失败: ${song.title}", e)
+                Platform.logger.e("WasmPlayer", "读取本地文件失败: ${song.title}", e)
                 audio.src = getRemoteUrl(song)
             }
         } else {
@@ -137,13 +138,13 @@ class WasmPlayerController : PlayerController {
 
     private fun getRemoteUrl(song: Song): String {
         val encodedId = song.id.encodeURLParameter()
-        val baseUrl = config.ConfigManager.getBaseUrl()
+        val baseUrl = Platform.config.getBaseUrl()
         var songUrl = "$baseUrl/api/music/play/$encodedId"
-        val hash = config.ConfigManager.getPasswordHash()
+        val hash = Platform.config.getPasswordHash()
         if (hash != null) {
             songUrl += "?auth=$hash"
         }
-        utils.Logger.i("WasmPlayer", "使用远程 URL 播放: $songUrl")
+        Platform.logger.i("WasmPlayer", "使用远程 URL 播放: $songUrl")
         return songUrl
     }
 
@@ -160,7 +161,7 @@ class WasmPlayerController : PlayerController {
 
     private fun revokeBlobUrl() {
         currentBlobUrl?.let { url ->
-            utils.Logger.i("WasmPlayer", "释放 Blob URL: $url")
+            Platform.logger.i("WasmPlayer", "释放 Blob URL: $url")
             jsRevokeObjectURL(url)
             currentBlobUrl = null
         }

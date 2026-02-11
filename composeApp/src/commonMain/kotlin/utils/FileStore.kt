@@ -9,15 +9,31 @@ object FileStore {
     private var baseDir: String = ""
 
     fun initialize(dir: String) {
-        baseDir = dir
-        fs.createDirectories(dir.toPath())
+        baseDir = dir.replace("\\", "/")
+        fs.createDirectories(baseDir.toPath())
+        // 创建子目录
+        fs.createDirectories("$baseDir/lyrics".toPath())
+        fs.createDirectories("$baseDir/cover".toPath())
+        fs.createDirectories("$baseDir/audio".toPath())
+    }
+
+    /**
+     * 智能解析路径：如果是绝对路径则直接使用，否则拼接 baseDir
+     */
+    private fun resolvePath(fileName: String): okio.Path {
+        val normalized = fileName.replace("\\", "/")
+        return if (normalized.startsWith("/") || (normalized.length > 1 && normalized[1] == ':')) {
+            normalized.toPath()
+        } else {
+            "$baseDir/$normalized".toPath()
+        }
     }
 
     /**
      * 保存数据到本地文件
      */
     fun saveFile(fileName: String, data: ByteArray) {
-        val path = "$baseDir/$fileName".toPath()
+        val path = resolvePath(fileName)
         val sink = fs.sink(path).buffer()
         try {
             sink.write(data)
@@ -30,7 +46,7 @@ object FileStore {
      * 保存歌词文本
      */
     fun saveLyrics(songId: String, lyrics: String) {
-        val path = "$baseDir/lyrics_$songId.lrc".toPath()
+        val path = resolvePath("lyrics/lyrics_$songId.lrc")
         val sink = fs.sink(path).buffer()
         try {
             sink.writeUtf8(lyrics)
@@ -43,7 +59,7 @@ object FileStore {
      * 保存封面数据
      */
     fun saveCover(songId: String, data: ByteArray) {
-        val path = "$baseDir/cover_$songId.jpg".toPath()
+        val path = resolvePath("cover/cover_$songId.jpg")
         val sink = fs.sink(path).buffer()
         try {
             sink.write(data)
@@ -56,7 +72,7 @@ object FileStore {
      * 读取歌词文本
      */
     fun readLyrics(songId: String): String? {
-        val path = "$baseDir/lyrics_$songId.lrc".toPath()
+        val path = resolvePath("lyrics/lyrics_$songId.lrc")
         if (!fs.exists(path)) return null
         val source = fs.source(path).buffer()
         return try {
@@ -70,7 +86,7 @@ object FileStore {
      * 获取封面本地路径
      */
     fun getCoverPath(songId: String): String? {
-        val path = "$baseDir/cover_$songId.jpg".toPath()
+        val path = resolvePath("cover/cover_$songId.jpg")
         return if (fs.exists(path)) path.toString() else null
     }
 
@@ -78,7 +94,7 @@ object FileStore {
      * 获取本地文件路径（如果存在）
      */
     fun getLocalPath(fileName: String): String? {
-        val path = "$baseDir/$fileName".toPath()
+        val path = resolvePath(fileName)
         return if (fs.exists(path)) path.toString() else null
     }
 
@@ -86,7 +102,7 @@ object FileStore {
      * 删除本地文件
      */
     fun deleteFile(fileName: String) {
-        val path = "$baseDir/$fileName".toPath()
+        val path = resolvePath(fileName)
         if (fs.exists(path)) {
             fs.delete(path)
         }

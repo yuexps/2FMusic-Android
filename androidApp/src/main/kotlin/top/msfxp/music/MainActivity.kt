@@ -10,7 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import top.msfxp.music.shared.App
-import database.DatabaseDriverFactory
+import api.AndroidPlayerController
 
 
 class MainActivity : ComponentActivity() {
@@ -22,13 +22,14 @@ class MainActivity : ComponentActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
-
-        val driverFactory = DatabaseDriverFactory(this)
+        
+        // 从全局访问点获取已在 Application 中初始化的依赖
+        val platform = utils.Platform.dependencies
         
         startService(Intent(this, PlayerService::class.java))
 
         setContent {
-            App(driverFactory)
+            App(platform)
         }
     }
 }

@@ -16,9 +16,10 @@ import org.khronos.webgl.ArrayBuffer
 import org.khronos.webgl.Int8Array
 import org.w3c.fetch.Response
 import top.msfxp.music.shared.App
+import data.ApiMusicRepository
+import api.MusicApi
 import kotlin.wasm.unsafe.UnsafeWasmMemoryApi
 import kotlin.wasm.unsafe.withScopedMemoryAllocator
-import database.DatabaseDriverFactory
 import utils.FileStore
 import androidx.compose.ui.window.CanvasBasedWindow
 
@@ -26,35 +27,53 @@ private const val MiSansRegular = "./MiSans-Regular.woff2"
 
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
-    utils.Logger.i("WasmMain", "Wasm main started")
+    val logger = utils.WasmLogger()
+    logger.i("WasmMain", "Wasm main started")
+    
     FileStore.initialize("web_cache")
-    val driverFactory = DatabaseDriverFactory()
+    
+    val config = config.WasmAppConfig()
+    val toast = utils.WasmToast()
+    val notification = utils.WasmNotificationHelper()
+    val repository = ApiMusicRepository(MusicApi())
+    
+    val platform = utils.PlatformDependencies(
+        repository = repository,
+        config = config,
+        logger = logger,
+        toast = toast,
+        notification = notification,
+        isWasm = true
+    )
+
+    utils.Platform.init(platform)
+
     ComposeViewport(viewportContainerId = "composeApplication") {
         val fontFamilyResolver = LocalFontFamilyResolver.current
         val fontsLoaded = remember { mutableStateOf(false) }
-
+ 
         LaunchedEffect(Unit) {
-            utils.Logger.i("WasmMain", "LaunchedEffect started, loading font: $MiSansRegular")
+            logger.i("WasmMain", "LaunchedEffect started, loading font: $MiSansRegular")
             try {
                 val miSansBytes = loadRes(MiSansRegular).toByteArray()
-                utils.Logger.i("WasmMain", "Font bytes loaded: ${miSansBytes.size}")
+                logger.i("WasmMain", "Font bytes loaded: ${miSansBytes.size}")
                 val fontFamily = FontFamily(Font("MiSans", miSansBytes))
                 fontFamilyResolver.preload(fontFamily)
-                utils.Logger.i("WasmMain", "Font preloaded successfully")
+                logger.i("WasmMain", "Font preloaded successfully")
             } catch (e: Throwable) {
-                utils.Logger.e("WasmMain", "Font loading failed", e)
+                logger.e("WasmMain", "Font loading failed", e)
             } finally {
                 fontsLoaded.value = true
-                utils.Logger.i("WasmMain", "fontsLoaded set to true")
+                logger.i("WasmMain", "fontsLoaded set to true")
             }
         }
 
         if (fontsLoaded.value) {
             SideEffect {
-                utils.Logger.i("WasmMain", "hiding HTML loading")
+                logger.i("WasmMain", "hiding HTML loading")
             }
             hideLoading()
-            App(driverFactory)
+            App(platform)
         } else {
             // 在 Compose 内部显示一个临时的白色背景或简单文字，避免白屏
             Box(Modifier.fillMaxSize()) {
