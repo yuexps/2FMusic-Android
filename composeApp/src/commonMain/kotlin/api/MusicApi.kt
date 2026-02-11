@@ -1,7 +1,6 @@
 package api
 
 import config.ConfigManager
-import io.ktor.client.* 
 import io.ktor.client.call.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -15,7 +14,7 @@ class MusicApi {
     private val baseUrl: String
         get() = ConfigManager.getBaseUrl()
 
-    private val client = httpClient() {
+    private val client = httpClient {
         expectSuccess = true // 强制校验 HTTP 状态码，401 等错误将抛出 ClientRequestException
 
         install(ContentNegotiation) {
@@ -74,24 +73,11 @@ class MusicApi {
         return response
     }
 
-    suspend fun getAlbumArt(title: String, artist: String, filename: String): model.AlbumArtResponse {
+    suspend fun getAlbumArt(title: String, artist: String, filename: String): AlbumArtResponse {
         return client.get("$baseUrl/api/music/album-art") {
             parameter("title", title)
             parameter("artist", artist)
             parameter("filename", filename)
-        }.body()
-    }
-
-    // --- 挂载点 ---
-    suspend fun getMountPoints(): List<MountPoint> {
-        val response: ApiResponse<List<MountPoint>> = client.get("$baseUrl/api/mount_points").body()
-        return response.data ?: emptyList()
-    }
-
-    suspend fun addMountPoint(path: String): ApiResponse<Unit> {
-        return client.post("$baseUrl/api/mount_points") {
-            contentType(ContentType.Application.Json)
-            setBody(mapOf("path" to path))
         }.body()
     }
 

@@ -1,27 +1,22 @@
 package top.msfxp.music
 
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.Context
 import android.content.Intent
-import android.os.Bundle
-import android.os.Build
 import androidx.core.app.NotificationCompat
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.MediaStyleNotificationHelper
-import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.Player
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import coil.imageLoader
 import coil.request.ImageRequest
 import kotlinx.coroutines.*
 
-@UnstableApi
 class PlayerService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -38,6 +33,7 @@ class PlayerService : MediaSessionService() {
     }
 
     private val sessionCallback = object : MediaSession.Callback {
+        @OptIn(UnstableApi::class)
         override fun onConnect(
             session: MediaSession,
             controller: MediaSession.ControllerInfo
@@ -71,17 +67,15 @@ class PlayerService : MediaSessionService() {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channelName = "Music Controls"
-            val importance = NotificationManager.IMPORTANCE_LOW
-            val channel = NotificationChannel(CHANNEL_ID, channelName, importance).apply {
-                description = "2FMusic Player Controls"
-                setShowBadge(false)
-                setSound(null, null)
-            }
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
+        val channelName = "Music Controls"
+        val importance = NotificationManager.IMPORTANCE_LOW
+        val channel = NotificationChannel(CHANNEL_ID, channelName, importance).apply {
+            description = "2FMusic Player Controls"
+            setShowBadge(false)
+            setSound(null, null)
         }
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        manager.createNotificationChannel(channel)
     }
 
     override fun onCreate() {
@@ -92,13 +86,8 @@ class PlayerService : MediaSessionService() {
         createNotificationChannel()
 
         // 2. Clean up old notifications and channels
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         manager.cancelAll()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // 删除旧的渠道，防止设置里出现多个
-            manager.deleteNotificationChannel("default_channel_id")
-            manager.deleteNotificationChannel("test_channel_id")
-        }
 
         // 3. Get Player and build MediaSession
         runCatching {
@@ -109,7 +98,7 @@ class PlayerService : MediaSessionService() {
             }
             val pendingIntent = PendingIntent.getActivity(
                 this, 0, intent, 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+                PendingIntent.FLAG_IMMUTABLE
             )
 
             mediaSession = MediaSession.Builder(this, player)
@@ -119,13 +108,13 @@ class PlayerService : MediaSessionService() {
             
             // Register listener
             player.addListener(playerListener)
-            // Debug Toast removed
         }.onFailure {
             println("[PlayerService] Failed to create MediaSession: ${it.message}")
             it.printStackTrace()
         }
     }
 
+    @OptIn(UnstableApi::class)
     private fun updateNotification() {
         val player = mediaSession?.player ?: return
         val metadata = player.mediaMetadata
@@ -184,7 +173,7 @@ class PlayerService : MediaSessionService() {
 
         val notification = builder.build()
 
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         
         // Android 12+ 要求：如果通过 startForegroundService 启动，必须调用 startForeground。
         // 我们在缓冲、正在播放、或者用户点击了播放但由于某种原因（如缓冲/错误）未开始播放时，都保持前台。
@@ -192,12 +181,8 @@ class PlayerService : MediaSessionService() {
         
         if (shouldBeForeground) {
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-                } else {
-                    startForeground(NOTIFICATION_ID, notification)
-                }
-            } catch (e: Exception) { 
+                startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+            } catch (e: Exception) {
                 e.printStackTrace()
                 // 如果 startForeground 失败（例如权限问题），至少也尝试显示通知
                 manager.notify(NOTIFICATION_ID, notification)

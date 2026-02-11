@@ -23,10 +23,8 @@ import model.PlayMode
 import model.PlaybackState
 import model.Song
 import utils.Sha256
-import androidx.media3.common.util.UnstableApi
 import utils.CoverUtil
 
-@UnstableApi
 object AndroidPlayerController : PlayerController {
     private var _player: ExoPlayer? = null
     val player: ExoPlayer
@@ -239,11 +237,7 @@ object AndroidPlayerController : PlayerController {
         _player?.let {
             try {
                 val intent = Intent(context, Class.forName("top.msfxp.music.PlayerService"))
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(intent)
-                } else {
-                    context.startService(intent)
-                }
+                context.startForegroundService(intent)
             } catch (e: Exception) {
                 utils.Logger.e("Player", "启动服务失败", e)
             }

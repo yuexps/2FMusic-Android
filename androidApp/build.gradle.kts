@@ -9,24 +9,20 @@ android {
     namespace = "top.msfxp.music"
     compileSdk = 36
 
-    kotlin {
-        jvmToolchain(21)
-    }
-
     defaultConfig {
         applicationId = "top.msfxp.music"
-        minSdk = 25
+        minSdk = 33
         targetSdk = 36
         versionCode = 1
-        versionName = "1.1.0"
+        versionName = "1.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            isMinifyEnabled = true
+            isShrinkResources = true
         }
     }
 
@@ -34,6 +30,13 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+}
+
+kotlin {
+    jvmToolchain(21)
+    compilerOptions {
+        freeCompilerArgs.add("-opt-in=androidx.media3.common.util.UnstableApi")
     }
 }
 

@@ -20,12 +20,10 @@ actual object NotificationHelper {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val importance = NotificationManager.IMPORTANCE_LOW
-            val channel = NotificationChannel(CHANNEL_ID, CHANNEL_NAME, importance)
-            val notificationManager = context?.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-            notificationManager?.createNotificationChannel(channel)
-        }
+        val importance = NotificationManager.IMPORTANCE_LOW
+        val channel = NotificationChannel(CHANNEL_ID, CHANNEL_NAME, importance)
+        val notificationManager = context?.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        notificationManager?.createNotificationChannel(channel)
     }
 
     actual fun showProgress(id: Int, title: String, content: String, progress: Int, max: Int, ongoing: Boolean) {

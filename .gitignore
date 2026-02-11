@@ -41,6 +41,5 @@ bin/
 
 ### Mac OS ###
 .DS_Store
-androidApp/release/androidApp-release.apk
-androidApp/release/baselineProfiles/0/androidApp-release.dm
-androidApp/release/baselineProfiles/1/androidApp-release.dm
+androidApp-release.apk
+androidApp-release.dm

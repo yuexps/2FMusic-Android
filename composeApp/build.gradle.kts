@@ -21,6 +21,10 @@ kotlin {
         freeCompilerArgs.add("-Xexpect-actual-classes")
     }
 
+    sourceSets.all {
+        languageSettings.optIn("androidx.media3.common.util.UnstableApi")
+    }
+
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
         outputModuleName.set("composeApp")
