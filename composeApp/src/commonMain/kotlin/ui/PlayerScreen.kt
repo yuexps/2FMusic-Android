@@ -293,23 +293,54 @@ fun PlayerScreen(
 
             // 歌曲信息 - 仅在封面页显示
             if (selectedTabIndex == 0) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    androidx.compose.foundation.text.BasicText(
-                        text = currentSong?.title ?: currentSong?.filename ?: "未知音乐",
-                        style = androidx.compose.ui.text.TextStyle(
-                            fontSize = 26.sp,
-                            fontWeight = FontWeight.Black,
-                            color = MiuixTheme.colorScheme.onSurface
-                        ),
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = currentSong?.artist ?: "未知艺术家",
-                        fontSize = 18.sp,
-                        color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        maxLines = 1
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        androidx.compose.foundation.text.BasicText(
+                            text = currentSong?.title ?: currentSong?.filename ?: "未知音乐",
+                            style = androidx.compose.ui.text.TextStyle(
+                                fontSize = 26.sp,
+                                fontWeight = FontWeight.Black,
+                                color = MiuixTheme.colorScheme.onSurface
+                            ),
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = currentSong?.artist ?: "未知艺术家",
+                            fontSize = 18.sp,
+                            color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            maxLines = 1
+                        )
+                    }
+
+                    IconButton(onClick = {
+                        currentSong?.let { song ->
+                            scope.launch {
+                                try {
+                                    if (isFavorite) {
+                                        api.removeFavorite(song.id)
+                                        repository.removeFavorite(song.id)
+                                    } else {
+                                        api.addFavorite(song.id)
+                                        repository.addFavorite(song.id)
+                                    }
+                                } catch (e: Throwable) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        }
+                    }) {
+                        Icon(
+                            imageVector = if (isFavorite) MiuixIcons.Heavy.Favorites else MiuixIcons.Heavy.Favorites, // 保持图标一致，颜色不同
+                            contentDescription = "Favorite",
+                            modifier = Modifier.size(28.dp),
+                            tint = if (isFavorite) Color.Red else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(24.dp))
@@ -373,7 +404,7 @@ fun PlayerScreen(
                     }) {
                         when (playMode) {
                             PlayMode.LIST_LOOP -> Icon(
-                                imageVector = MiuixIcons.Heavy.Refresh,
+                                imageVector = MiuixIcons.Heavy.Replace,
                                 contentDescription = "列表循环",
                                 modifier = Modifier.size(24.dp),
                                 tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
@@ -393,7 +424,7 @@ fun PlayerScreen(
                                 )
                             }
                             PlayMode.RANDOM -> Icon(
-                                imageVector = MiuixIcons.Heavy.Replace,
+                                imageVector = MiuixIcons.Heavy.Help,
                                 contentDescription = "随机播放",
                                 modifier = Modifier.size(24.dp),
                                 tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
@@ -465,32 +496,15 @@ fun PlayerScreen(
                         )
                     }
 
-                    // 收藏按钮
-                    IconButton(onClick = { 
-                        currentSong?.let { song ->
-                            scope.launch {
-                                try {
-                                    if (isFavorite) {
-                                        api.removeFavorite(song.id)
-                                        repository.removeFavorite(song.id)
-                                    } else {
-                                        api.addFavorite(song.id)
-                                        repository.addFavorite(song.id)
-                                    }
-                                    
-                                    // 触发刷新 (网络侧)
-                                    // 注意：本地状态更新已由 repository.add/removeFavorite -> App.kt 监听 -> GlobalState 完成
-                                } catch (e: Throwable) {
-                                    e.printStackTrace()
-                                }
-                            }
-                        }
+                    // 播放列表按钮
+                    IconButton(onClick = {
+                        GlobalState.togglePlaylist(true)
                     }) {
                         Icon(
-                            imageVector = MiuixIcons.Heavy.Favorites,
-                            contentDescription = "Favorite", 
+                            imageVector = MiuixIcons.Heavy.Playlist,
+                            contentDescription = "Playlist",
                             modifier = Modifier.size(26.dp),
-                            tint = if (isFavorite) Color.Red else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                            tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                         )
                     }
                 }

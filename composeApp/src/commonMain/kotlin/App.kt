@@ -1,8 +1,5 @@
 package top.msfxp.music.shared
 
-import data.MusicRepository
-import data.DownloadResult
-
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -46,7 +43,7 @@ import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.extra.SuperBottomSheet
+import top.yukonga.miuix.kmp.extra.WindowBottomSheet
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Favorites
 import top.yukonga.miuix.kmp.icon.extended.Music
@@ -195,7 +192,7 @@ fun App(platform: PlatformDependencies) {
                     showPlaylistStateMutable.value = showPlaylistState
                 }
 
-                SuperBottomSheet(
+                WindowBottomSheet(
                     show = showPlaylistStateMutable,
                     title = "当前播放 (${playlist.size})",
                     onDismissRequest = { GlobalState.togglePlaylist(false) }
