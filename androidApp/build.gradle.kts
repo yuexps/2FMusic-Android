@@ -7,11 +7,11 @@ plugins {
 
 android {
     namespace = "top.msfxp.music"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "top.msfxp.music"
-        minSdk = 33
+        minSdk = 28
         targetSdk = 36
         versionCode = 1
         versionName = "1.1.1"

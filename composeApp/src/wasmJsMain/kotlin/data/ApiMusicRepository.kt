@@ -3,18 +3,14 @@ package data
 import api.MusicApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flow
 import model.Song
 import model.Playlist
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import utils.Platform
 import utils.FileStore
-import kotlinx.browser.window
 import io.ktor.http.*
 
-@OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+@OptIn(ExperimentalWasmJsInterop::class)
 @JsFun("""
 (url, filename) => {
     fetch(url)
@@ -47,7 +43,7 @@ class ApiMusicRepository(
 
     private val _songs = MutableStateFlow<List<Song>>(emptyList())
     private val _favorites = MutableStateFlow<Set<String>>(emptySet())
-    private val _playlists = MutableStateFlow<List<Playlist>>(listOf(createDefaultPlaylist()))
+    private val _playlists = MutableStateFlow(listOf(createDefaultPlaylist()))
 
     private fun createDefaultPlaylist() = Playlist(
         id = "default",
@@ -76,13 +72,81 @@ class ApiMusicRepository(
     }
 
     override suspend fun addFavorite(id: String) {
-        _favorites.value += id
-        updateDefaultPlaylistCount()
+        addSongToPlaylist(id, "default")
     }
 
     override suspend fun removeFavorite(id: String) {
-        _favorites.value -= id
-        updateDefaultPlaylistCount()
+        removeSongFromPlaylist(id, "default")
+    }
+
+    override suspend fun createPlaylist(name: String): Playlist {
+        try {
+            val playlist = api.createPlaylist(name)
+            _playlists.value += playlist
+            return playlist
+        } catch (e: Exception) {
+            Platform.logger.e("ApiMusicRepository", "创建歌单失败", e)
+            throw e
+        }
+    }
+
+    override suspend fun deletePlaylist(playlistId: String) {
+        if (playlistId == "default") return
+        try {
+            api.deletePlaylist(playlistId)
+            _playlists.value = _playlists.value.filter { it.id != playlistId }
+        } catch (e: Exception) {
+            Platform.logger.e("ApiMusicRepository", "删除歌单失败", e)
+            throw e
+        }
+    }
+
+    override suspend fun addSongToPlaylist(songId: String, playlistId: String) {
+        try {
+            api.addFavorite(songId, playlistId)
+            if (playlistId == "default") {
+                _favorites.value += songId
+                updateDefaultPlaylistCount()
+            } else {
+                refreshPlaylists()
+            }
+        } catch (e: Exception) {
+            Platform.logger.e("ApiMusicRepository", "添加歌曲到歌单失败", e)
+            throw e
+        }
+    }
+
+    override suspend fun removeSongFromPlaylist(songId: String, playlistId: String) {
+        try {
+            api.removeFavorite(songId, playlistId)
+            if (playlistId == "default") {
+                _favorites.value -= songId
+                updateDefaultPlaylistCount()
+            } else {
+                refreshPlaylists()
+            }
+        } catch (e: Exception) {
+            Platform.logger.e("ApiMusicRepository", "从歌单移除歌曲失败", e)
+            throw e
+        }
+    }
+
+    override suspend fun batchMoveSongs(songIds: List<String>, fromPlaylistId: String, toPlaylistId: String) {
+        try {
+            api.batchMoveSongs(songIds, fromPlaylistId, toPlaylistId)
+            if (fromPlaylistId == "default") {
+                _favorites.value = _favorites.value - songIds.toSet()
+                updateDefaultPlaylistCount()
+            }
+            if (toPlaylistId == "default") {
+                _favorites.value = _favorites.value + songIds.toSet()
+                updateDefaultPlaylistCount()
+            }
+            refreshPlaylists()
+        } catch (e: Exception) {
+            Platform.logger.e("ApiMusicRepository", "批量转移歌曲失败", e)
+            throw e
+        }
     }
 
     private fun updateDefaultPlaylistCount() {
@@ -154,6 +218,7 @@ class ApiMusicRepository(
                 var targetUrl = song.albumArt
                 if (targetUrl == null) {
                     val response = api.getAlbumArt(
+                        songId = song.id,
                         title = song.title ?: "",
                         artist = song.artist ?: "",
                         filename = song.filename ?: ""
@@ -176,8 +241,10 @@ class ApiMusicRepository(
         if (FileStore.readLyrics(song.id) == null) {
             try {
                 val response = api.getLyrics(
+                    songId = song.id,
                     title = song.title ?: "",
-                    artist = song.artist ?: ""
+                    artist = song.artist ?: "",
+                    filename = song.filename ?: ""
                 )
                 if (response.success && response.lyrics != null) {
                     FileStore.saveLyrics(song.id, response.lyrics)

@@ -17,6 +17,11 @@ interface MusicRepository {
     fun getSongsInPlaylist(playlistId: String): Flow<List<Song>>
     suspend fun addFavorite(id: String)
     suspend fun removeFavorite(id: String)
+    suspend fun createPlaylist(name: String): Playlist
+    suspend fun deletePlaylist(playlistId: String)
+    suspend fun addSongToPlaylist(songId: String, playlistId: String)
+    suspend fun removeSongFromPlaylist(songId: String, playlistId: String)
+    suspend fun batchMoveSongs(songIds: List<String>, fromPlaylistId: String, toPlaylistId: String)
     suspend fun sync()
     suspend fun syncPlaylists()
     suspend fun ensureDefaultPlaylistExists()

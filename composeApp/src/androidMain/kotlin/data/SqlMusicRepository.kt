@@ -58,17 +58,88 @@ class SqlMusicRepository(
         }
     }
 
-    override suspend fun addFavorite(id: String) = withContext(Dispatchers.Default) {
-        queries.transaction {
-            queries.addSongToPlaylist("default", id)
-            queries.refreshPlaylistCount("default")
+    override suspend fun addFavorite(id: String) {
+        addSongToPlaylist(id, "default")
+    }
+
+    override suspend fun removeFavorite(id: String) {
+        removeSongFromPlaylist(id, "default")
+    }
+
+    override suspend fun createPlaylist(name: String): Playlist = withContext(IODispatcher) {
+        try {
+            val playlist = api.createPlaylist(name)
+            queries.transaction {
+                queries.insertPlaylist(
+                    id = playlist.id,
+                    name = playlist.name,
+                    songCount = playlist.songCount.toLong(),
+                    cover = playlist.cover,
+                    isDefault = playlist.isDefault?.toLong() ?: 0L,
+                    createdAt = playlist.createdAt
+                )
+            }
+            return@withContext playlist
+        } catch (e: Exception) {
+            Platform.logger.e("SqlMusicRepository", "创建歌单失败", e)
+            throw e
         }
     }
 
-    override suspend fun removeFavorite(id: String) = withContext(Dispatchers.Default) {
-        queries.transaction {
-            queries.removeSongFromPlaylist("default", id)
-            queries.refreshPlaylistCount("default")
+    override suspend fun deletePlaylist(playlistId: String) = withContext(IODispatcher) {
+        if (playlistId == "default") return@withContext
+        try {
+            api.deletePlaylist(playlistId)
+            queries.transaction {
+                queries.deletePlaylist(playlistId)
+                queries.removeAllSongsFromPlaylist(playlistId)
+            }
+        } catch (e: Exception) {
+            Platform.logger.e("SqlMusicRepository", "删除歌单失败", e)
+            throw e
+        }
+    }
+
+    override suspend fun addSongToPlaylist(songId: String, playlistId: String) = withContext(IODispatcher) {
+        try {
+            api.addFavorite(songId, playlistId)
+            queries.transaction {
+                queries.addSongToPlaylist(playlistId, songId)
+                queries.refreshPlaylistCount(playlistId)
+            }
+        } catch (e: Exception) {
+            Platform.logger.e("SqlMusicRepository", "添加歌曲到歌单失败", e)
+            throw e
+        }
+    }
+
+    override suspend fun removeSongFromPlaylist(songId: String, playlistId: String) = withContext(IODispatcher) {
+        try {
+            api.removeFavorite(songId, playlistId)
+            queries.transaction {
+                queries.removeSongFromPlaylist(playlistId, songId)
+                queries.refreshPlaylistCount(playlistId)
+            }
+        } catch (e: Exception) {
+            Platform.logger.e("SqlMusicRepository", "从歌单移除歌曲失败", e)
+            throw e
+        }
+    }
+
+    override suspend fun batchMoveSongs(songIds: List<String>, fromPlaylistId: String, toPlaylistId: String) = withContext(IODispatcher) {
+        try {
+            api.batchMoveSongs(songIds, fromPlaylistId, toPlaylistId)
+            queries.transaction {
+                songIds.forEach { songId ->
+                    queries.removeSongFromPlaylist(fromPlaylistId, songId)
+                    queries.addSongToPlaylist(toPlaylistId, songId)
+                }
+                queries.refreshPlaylistCount(fromPlaylistId)
+                queries.refreshPlaylistCount(toPlaylistId)
+            }
+        } catch (e: Exception) {
+            Platform.logger.e("SqlMusicRepository", "批量转移歌曲失败", e)
+            throw e
         }
     }
 
@@ -230,11 +301,12 @@ class SqlMusicRepository(
                 var targetUrl = song.albumArt
                 if (targetUrl == null) {
                     val response = api.getAlbumArt(
+                        songId = song.id,
                         title = song.title ?: "",
                         artist = song.artist ?: "",
                         filename = song.filename ?: ""
                     )
-                    if (response.success && response.albumArt != null) {
+                    if (response.albumArt != null) {
                         targetUrl = response.albumArt
                     }
                 }
@@ -253,10 +325,12 @@ class SqlMusicRepository(
         if (utils.FileStore.readLyrics(song.id) == null) {
             try {
                 val response = api.getLyrics(
+                    songId = song.id,
                     title = song.title ?: "",
-                    artist = song.artist ?: ""
+                    artist = song.artist ?: "",
+                    filename = song.filename ?: ""
                 )
-                if (response.success && response.lyrics != null) {
+                if (response.lyrics != null) {
                     utils.FileStore.saveLyrics(song.id, response.lyrics)
                     queries.updateLyricsPath("lyrics/lyrics_${song.id}.lrc", song.id)
                 }

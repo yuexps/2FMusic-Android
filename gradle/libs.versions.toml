@@ -1,6 +1,6 @@
 [versions]
-android-gradle-plugin = "9.0.0"
-androidx-activity-compose = "1.12.3"
+android-gradle-plugin = "9.2.1"
+androidx-activity-compose = "1.12.4"
 compose-plugin = "1.10.1"
 haze = "1.7.2"
 image-loader = "1.10.0"
@@ -10,7 +10,7 @@ kotlinx-serialization-json = "1.10.0"
 kotlinx-datetime = "0.7.1"
 ktor-client = "3.4.0"
 media3 = "1.9.2"
-miuix = "0.8.1"
+miuix = "0.9.1"
 coil = "2.7.0"
 sqldelight = "2.2.1"
 okio = "3.16.4"
@@ -29,10 +29,11 @@ ktor-client-auth = { module = "io.ktor:ktor-client-auth", version.ref = "ktor-cl
 ktor-client-encoding = { module = "io.ktor:ktor-client-encoding", version.ref = "ktor-client" }
 ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor-client" }
 ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor-client" }
+ktor-client-websockets = { module = "io.ktor:ktor-client-websockets", version.ref = "ktor-client" }
 media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3" }
 media3-session = { module = "androidx.media3:media3-session", version.ref = "media3" }
 media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3" }
-miuix = { module = "top.yukonga.miuix.kmp:miuix", version.ref = "miuix" }
+miuix-ui = { module = "top.yukonga.miuix.kmp:miuix-ui", version.ref = "miuix" }
 miuix-icons = { module = "top.yukonga.miuix.kmp:miuix-icons", version.ref = "miuix" }
 ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose-plugin" }
 components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "compose-plugin" }

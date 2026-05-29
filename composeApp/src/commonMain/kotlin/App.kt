@@ -36,14 +36,14 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import api.GlobalPlayerController
 import api.GlobalState
-import api.MusicApi
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.NavigationBar
+import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.NavigationItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.extra.WindowBottomSheet
+import top.yukonga.miuix.kmp.window.WindowBottomSheet
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Favorites
 import top.yukonga.miuix.kmp.icon.extended.Music
@@ -71,8 +71,6 @@ fun App(platform: PlatformDependencies) {
             NavigationItem("系统", MiuixIcons.Settings)
         )
     }
-
-    val api = remember { MusicApi() }
 
     val playlist by GlobalPlayerController.playlist.collectAsState()
     val showPlaylistState by GlobalState.showPlaylistState.collectAsState()
@@ -106,7 +104,7 @@ fun App(platform: PlatformDependencies) {
 
     LaunchedEffect(Unit) {
         // 1. 启动时监听本地数据库的收藏列表 (实现离线可用)
-        val localFavsJob = launch {
+        launch {
             repository.ensureDefaultPlaylistExists()
             repository.getFavorites().collect { ids ->
                 GlobalState.updateFavorites(ids)
@@ -138,11 +136,16 @@ fun App(platform: PlatformDependencies) {
                     if (!showPlayerScreen) {
                         Column {
                             BottomPlayerBar(onClick = { showPlayerScreen = true })
-                            NavigationBar(
-                                items = navigationItems,
-                                selected = selectedIndex,
-                                onClick = { selectedIndex = it }
-                            )
+                            NavigationBar {
+                                navigationItems.forEachIndexed { index, item ->
+                                    NavigationBarItem(
+                                        selected = selectedIndex == index,
+                                        onClick = { selectedIndex = index },
+                                        icon = item.icon,
+                                        label = item.label
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -187,13 +190,8 @@ fun App(platform: PlatformDependencies) {
                 }
 
                 // 全局播放列表弹窗
-                val showPlaylistStateMutable = remember { mutableStateOf(showPlaylistState) }
-                LaunchedEffect(showPlaylistState) {
-                    showPlaylistStateMutable.value = showPlaylistState
-                }
-
                 WindowBottomSheet(
-                    show = showPlaylistStateMutable,
+                    show = showPlaylistState,
                     title = "当前播放 (${playlist.size})",
                     onDismissRequest = { GlobalState.togglePlaylist(false) }
                 ) {

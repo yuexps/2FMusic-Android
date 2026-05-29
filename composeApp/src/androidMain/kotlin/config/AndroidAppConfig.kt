@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import model.PlaybackStateData
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 class AndroidAppConfig : AppConfig {
@@ -64,7 +63,7 @@ class AndroidAppConfig : AppConfig {
         val json = getPrefs().getString(KEY_PLAYBACK_STATE, null) ?: return null
         return try {
             Json.decodeFromString<PlaybackStateData>(json)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }

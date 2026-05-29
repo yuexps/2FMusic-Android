@@ -12,20 +12,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import api.GlobalPlayerController
 import api.GlobalState
 import model.PlaybackState
-import model.Song
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Pause
 import top.yukonga.miuix.kmp.icon.extended.Play
 import top.yukonga.miuix.kmp.icon.extended.Playlist
-import top.yukonga.miuix.kmp.icon.extended.VolumeUp
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -35,9 +30,7 @@ fun BottomPlayerBar(
     val currentSong by GlobalPlayerController.currentSong.collectAsState()
     val playbackState by GlobalPlayerController.playbackState.collectAsState()
     val progress by GlobalPlayerController.progress.collectAsState()
-    val playlist by GlobalPlayerController.playlist.collectAsState()
-    val currentIndex by GlobalPlayerController.currentIndex.collectAsState()
-    
+
 
     if (currentSong == null) return
 

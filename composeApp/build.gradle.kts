@@ -13,7 +13,8 @@ kotlin {
     jvmToolchain(21)
     android {
         androidResources.enable = true
-        compileSdk = 36
+        compileSdk = 37
+        minSdk = 28
         namespace = "top.msfxp.music.shared"
     }
     
@@ -37,13 +38,13 @@ kotlin {
     }
     
     sourceSets {
-        val commonMain by getting {
+        commonMain {
             dependencies {
                 api(libs.ui)
                 api(libs.components.resources)
                 
                 // Miuix
-                implementation(libs.miuix)
+                implementation(libs.miuix.ui)
                 implementation(libs.miuix.icons)
                 implementation(libs.haze)
                 
@@ -53,6 +54,7 @@ kotlin {
                 implementation(libs.ktor.client.encoding)
                 implementation(libs.ktor.client.content.negotiation)
                 implementation(libs.ktor.serialization.kotlinx.json)
+                implementation(libs.ktor.client.websockets)
                 implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.datetime)
                 
@@ -68,8 +70,8 @@ kotlin {
                 implementation(libs.image.loader)
             }
         }
-        
-        val androidMain by getting {
+
+        androidMain {
             dependencies {
                 implementation(libs.androidx.activity.compose)
                 implementation(libs.ktor.client.okhttp)
@@ -79,8 +81,8 @@ kotlin {
                 implementation(libs.sqldelight.android)
             }
         }
-        
-        val wasmJsMain by getting {
+
+        wasmJsMain {
             dependencies {
                 implementation(libs.ktor.client.js)
                 implementation(libs.sqldelight.web)

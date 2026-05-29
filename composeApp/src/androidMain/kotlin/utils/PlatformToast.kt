@@ -1,7 +1,5 @@
 package utils
 
-import top.msfxp.music.shared.App
-import androidx.compose.runtime.Composable
 import android.content.Context
 
 class AndroidToast : Toast {

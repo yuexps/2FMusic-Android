@@ -1,8 +1,6 @@
 package utils
 
-import kotlinx.browser.window
-
-@OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+@OptIn(ExperimentalWasmJsInterop::class)
 @JsFun("""
 (message) => {
     const toast = document.createElement('div');

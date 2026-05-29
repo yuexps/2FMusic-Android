@@ -1,7 +1,5 @@
 package config
 
-import model.PlaybackStateData
-
 interface AppConfig {
     fun initialize(context: Any? = null)
     fun getBaseUrl(): String

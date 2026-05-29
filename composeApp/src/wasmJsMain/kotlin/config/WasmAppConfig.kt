@@ -4,9 +4,7 @@ import kotlinx.browser.localStorage
 import org.w3c.dom.get
 import org.w3c.dom.set
 import model.PlaybackStateData
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.decodeFromString
 
 import utils.Platform
 
@@ -66,7 +64,7 @@ class WasmAppConfig : AppConfig {
         val json = localStorage[KEY_PLAYBACK_STATE] ?: return null
         return try {
             Json.decodeFromString<PlaybackStateData>(json)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }

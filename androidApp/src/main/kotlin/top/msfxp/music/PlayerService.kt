@@ -4,6 +4,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -16,8 +17,8 @@ import androidx.media3.common.util.UnstableApi
 import coil.imageLoader
 import coil.request.ImageRequest
 import kotlinx.coroutines.*
-import api.AndroidPlayerController
 
+@UnstableApi
 class PlayerService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -34,7 +35,6 @@ class PlayerService : MediaSessionService() {
     }
 
     private val sessionCallback = object : MediaSession.Callback {
-        @OptIn(UnstableApi::class)
         override fun onConnect(
             session: MediaSession,
             controller: MediaSession.ControllerInfo
@@ -115,7 +115,6 @@ class PlayerService : MediaSessionService() {
         }
     }
 
-    @OptIn(UnstableApi::class)
     private fun updateNotification() {
         val player = mediaSession?.player ?: return
         val metadata = player.mediaMetadata
@@ -142,10 +141,11 @@ class PlayerService : MediaSessionService() {
         }
 
         // Prepare Action PendingIntents
-        val playIntent = PendingIntent.getService(this, 1, Intent(this, PlayerService::class.java).setAction(ACTION_PLAY), PendingIntent.FLAG_IMMUTABLE)
-        val pauseIntent = PendingIntent.getService(this, 2, Intent(this, PlayerService::class.java).setAction(ACTION_PAUSE), PendingIntent.FLAG_IMMUTABLE)
-        val nextIntent = PendingIntent.getService(this, 3, Intent(this, PlayerService::class.java).setAction(ACTION_NEXT), PendingIntent.FLAG_IMMUTABLE)
-        val prevIntent = PendingIntent.getService(this, 4, Intent(this, PlayerService::class.java).setAction(ACTION_PREV), PendingIntent.FLAG_IMMUTABLE)
+        val pendingIntentFlags = PendingIntent.FLAG_IMMUTABLE
+        val playIntent = PendingIntent.getService(this, 1, Intent(this, PlayerService::class.java).setAction(ACTION_PLAY), pendingIntentFlags)
+        val pauseIntent = PendingIntent.getService(this, 2, Intent(this, PlayerService::class.java).setAction(ACTION_PAUSE), pendingIntentFlags)
+        val nextIntent = PendingIntent.getService(this, 3, Intent(this, PlayerService::class.java).setAction(ACTION_NEXT), pendingIntentFlags)
+        val prevIntent = PendingIntent.getService(this, 4, Intent(this, PlayerService::class.java).setAction(ACTION_PREV), pendingIntentFlags)
 
         val isPlaying = player.isPlaying
         val playPauseAction = if (isPlaying) {
@@ -182,7 +182,11 @@ class PlayerService : MediaSessionService() {
         
         if (shouldBeForeground) {
             try {
-                startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+                } else {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
                 // 如果 startForeground 失败（例如权限问题），至少也尝试显示通知

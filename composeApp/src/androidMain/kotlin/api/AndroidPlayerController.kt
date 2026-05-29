@@ -3,8 +3,6 @@ package api
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
-import java.io.File
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -23,7 +21,9 @@ import model.PlayMode
 import model.PlaybackState
 import model.Song
 import utils.CoverUtil
+import androidx.core.net.toUri
 
+@androidx.media3.common.util.UnstableApi
 object AndroidPlayerController : PlayerController {
     private var _player: ExoPlayer? = null
     val player: ExoPlayer
@@ -104,10 +104,10 @@ object AndroidPlayerController : PlayerController {
 
                         // 简单的逻辑判断：如果歌曲没有本地路径且报错，通常是因为离线/网络问题
                         if (song != null) {
-                            if (song.localAudioPath == null) {
-                                errorMessage = "歌曲 [${song.title}] 未下载，且无法连接服务器。"
+                            errorMessage = if (song.localAudioPath == null) {
+                                "歌曲 [${song.title}] 未下载，且无法连接服务器。"
                             } else {
-                                errorMessage = "播放本地歌曲 [${song.title}] 失败，文件可能已损坏。"
+                                "播放本地歌曲 [${song.title}] 失败，文件可能已损坏。"
                             }
                         }
 
@@ -169,7 +169,7 @@ object AndroidPlayerController : PlayerController {
         
         if (uri == null) {
             val url = "$baseUrl/api/music/play/${song.id}?$auth"
-            uri = Uri.parse(url)
+            uri = url.toUri()
             if (verbose) Platform.logger.i("Audio", "回退到远程 URL: $url")
         }
         
@@ -188,7 +188,7 @@ object AndroidPlayerController : PlayerController {
             .setTitle(song.title ?: song.filename)
             .setArtist(song.artist ?: "未知艺术家")
             .setAlbumTitle(song.album ?: "")
-            .setArtworkUri(albumArtUrl?.let { Uri.parse(it) })
+            .setArtworkUri(albumArtUrl?.toUri())
             .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
             .build()
             
@@ -208,7 +208,7 @@ object AndroidPlayerController : PlayerController {
             
             // 关键：检查当前播放队列里的 MediaItem 是否需要更新（例如从远程 URL 变为本地路径）
             val newMediaItem = createMediaItem(song, verbose = true)
-            val currentMediaItem = try { player.getMediaItemAt(index) } catch (e: Exception) { null }
+            val currentMediaItem = try { player.getMediaItemAt(index) } catch (_: Exception) { null }
             
             if (currentMediaItem != null && newMediaItem.localConfiguration?.uri != currentMediaItem.localConfiguration?.uri) {
                 Platform.logger.i("Audio", "正在将索引 $index 处的媒体项更新为本地化 URI。")
@@ -382,14 +382,6 @@ object AndroidPlayerController : PlayerController {
     private fun stopProgressTracker() {
         progressJob?.cancel()
         progressJob = null
-    }
-
-    fun release() {
-        saveState()
-        _player?.release()
-        _player = null
-        isInitialized = false
-        progressJob?.cancel()
     }
 
     private fun saveState() {

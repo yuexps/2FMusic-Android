@@ -2,7 +2,6 @@ package top.msfxp.music
 
 import android.app.Application
 import api.AndroidPlayerController
-import utils.FileStore
 
 
 class FMusicApplication : Application() {

@@ -18,7 +18,7 @@ private class WasmFileSystem : FileSystem() {
         files.remove(path.toString())
     }
     override fun list(dir: Path): List<Path> = emptyList()
-    override fun listOrNull(dir: Path): List<Path>? = emptyList()
+    override fun listOrNull(dir: Path): List<Path> = emptyList()
     override fun listRecursively(dir: Path, followSymlinks: Boolean): Sequence<Path> = emptySequence()
     override fun metadataOrNull(path: Path): FileMetadata? {
         val data = files[path.toString()] ?: return null

@@ -29,7 +29,7 @@ import top.yukonga.miuix.kmp.basic.*
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.*
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.extra.SuperDialog
+import top.yukonga.miuix.kmp.window.WindowDialog
 import utils.LrcLine
 import utils.LrcParser
 import kotlinx.coroutines.delay
@@ -46,7 +46,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 
-import top.yukonga.miuix.kmp.extra.SuperListPopup
+import top.yukonga.miuix.kmp.window.WindowListPopup
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
@@ -63,7 +63,6 @@ fun PlayerScreen(
     val currentSong by GlobalPlayerController.currentSong.collectAsState()
     val playbackState by GlobalPlayerController.playbackState.collectAsState()
     val playMode by GlobalPlayerController.playMode.collectAsState()
-    val progress by GlobalPlayerController.progress.collectAsState()
     val duration by GlobalPlayerController.duration.collectAsState()
     val currentPosition by GlobalPlayerController.currentPosition.collectAsState()
     
@@ -73,8 +72,7 @@ fun PlayerScreen(
     
     val api = remember { MusicApi() }
     val playlist by GlobalPlayerController.playlist.collectAsState()
-    val currentIndex by GlobalPlayerController.currentIndex.collectAsState()
-    
+
     val favoriteIds by GlobalState.favoriteIds.collectAsState()
     val isFavorite = currentSong?.let { favoriteIds.contains(it.id) } ?: false
 
@@ -162,8 +160,8 @@ fun PlayerScreen(
                         Icon(imageVector = MiuixIcons.More, contentDescription = "更多")
                     }
                     
-                    SuperListPopup(
-                        show = showMenu,
+                    WindowListPopup(
+                        show = showMenu.value,
                         alignment = PopupPositionProvider.Align.End, // 靠右对齐
                         onDismissRequest = { showMenu.value = false }
                     ) {
@@ -335,7 +333,7 @@ fun PlayerScreen(
                         }
                     }) {
                         Icon(
-                            imageVector = if (isFavorite) MiuixIcons.Heavy.Favorites else MiuixIcons.Heavy.Favorites, // 保持图标一致，颜色不同
+                            imageVector = if (isFavorite) MiuixIcons.Demibold.Favorites else MiuixIcons.Demibold.Favorites, // 保持图标一致，颜色不同
                             contentDescription = "Favorite",
                             modifier = Modifier.size(28.dp),
                             tint = if (isFavorite) Color.Red else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
@@ -404,14 +402,14 @@ fun PlayerScreen(
                     }) {
                         when (playMode) {
                             PlayMode.LIST_LOOP -> Icon(
-                                imageVector = MiuixIcons.Heavy.Replace,
+                                imageVector = MiuixIcons.Demibold.Replace,
                                 contentDescription = "列表循环",
                                 modifier = Modifier.size(24.dp),
                                 tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                             )
                             PlayMode.SINGLE_LOOP -> Box {
                                 Icon(
-                                    imageVector = MiuixIcons.Heavy.Refresh,
+                                    imageVector = MiuixIcons.Demibold.Refresh,
                                     contentDescription = "单曲循环",
                                     modifier = Modifier.size(24.dp),
                                     tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
@@ -424,7 +422,7 @@ fun PlayerScreen(
                                 )
                             }
                             PlayMode.RANDOM -> Icon(
-                                imageVector = MiuixIcons.Heavy.Help,
+                                imageVector = MiuixIcons.Demibold.Help,
                                 contentDescription = "随机播放",
                                 modifier = Modifier.size(24.dp),
                                 tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
@@ -444,7 +442,7 @@ fun PlayerScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = MiuixIcons.Heavy.ChevronBackward,
+                            imageVector = MiuixIcons.Demibold.ChevronBackward,
                             contentDescription = "Previous", 
                             modifier = Modifier.size(32.dp),
                             tint = MiuixTheme.colorScheme.onSurface
@@ -469,7 +467,7 @@ fun PlayerScreen(
                             )
                         } else {
                             Icon(
-                                imageVector = if (playbackState == PlaybackState.PLAYING) MiuixIcons.Heavy.Pause else MiuixIcons.Heavy.Play,
+                                imageVector = if (playbackState == PlaybackState.PLAYING) MiuixIcons.Demibold.Pause else MiuixIcons.Demibold.Play,
                                 contentDescription = "Play/Pause",
                                 tint = MiuixTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(36.dp)
@@ -489,7 +487,7 @@ fun PlayerScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = MiuixIcons.Heavy.ChevronForward,
+                            imageVector = MiuixIcons.Demibold.ChevronForward,
                             contentDescription = "Next", 
                             modifier = Modifier.size(32.dp),
                             tint = MiuixTheme.colorScheme.onSurface
@@ -501,7 +499,7 @@ fun PlayerScreen(
                         GlobalState.togglePlaylist(true)
                     }) {
                         Icon(
-                            imageVector = MiuixIcons.Heavy.Playlist,
+                            imageVector = MiuixIcons.Demibold.Playlist,
                             contentDescription = "Playlist",
                             modifier = Modifier.size(26.dp),
                             tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
@@ -513,10 +511,10 @@ fun PlayerScreen(
             }
         }
 
-        SuperDialog(
+        WindowDialog(
             title = "确认删除",
             summary = "确定要删除 ${currentSong?.filename ?: ""} 吗？",
-            show = showDeleteDialog,
+            show = showDeleteDialog.value,
             onDismissRequest = { showDeleteDialog.value = false }
         ) {
             Row(
@@ -582,8 +580,6 @@ fun LyricsView(
     val density = LocalDensity.current
 
     BoxWithConstraints(modifier = modifier) {
-        val viewHeightPx = with(density) { maxHeight.toPx() }
-        val itemHeightPx = with(density) { 80.dp.toPx() } // 预估的单行(含间距)基础高度
 
         // 监听索引变化，平滑轮滚到正中心
         LaunchedEffect(currentIndex) {
