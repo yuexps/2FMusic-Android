@@ -27,5 +27,4 @@ interface PlayerController {
     fun playAtIndex(index: Int)
 }
 
-// 全局播放器实例（在各平台 main 函数中初始化）
-expect val GlobalPlayerController: PlayerController
+

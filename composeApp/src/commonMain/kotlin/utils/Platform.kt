@@ -22,6 +22,7 @@ object Platform {
     val toast: Toast get() = dependencies.toast
     val notification: NotificationHelper get() = dependencies.notification
     val repository: MusicRepository get() = dependencies.repository
+    val playerController: api.PlayerController get() = dependencies.playerController
     val isWasm: Boolean get() = dependencies.isWasm
     
     /**

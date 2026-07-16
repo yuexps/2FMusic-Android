@@ -12,11 +12,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import api.GlobalPlayerController
+import utils.Platform
 import api.GlobalState
 import model.PlaybackState
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Text
+
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Pause
 import top.yukonga.miuix.kmp.icon.extended.Play
@@ -27,9 +29,9 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 fun BottomPlayerBar(
     onClick: () -> Unit = {}
 ) {
-    val currentSong by GlobalPlayerController.currentSong.collectAsState()
-    val playbackState by GlobalPlayerController.playbackState.collectAsState()
-    val progress by GlobalPlayerController.progress.collectAsState()
+    val currentSong by Platform.playerController.currentSong.collectAsState()
+    val playbackState by Platform.playerController.playbackState.collectAsState()
+    val progress by Platform.playerController.progress.collectAsState()
 
 
     if (currentSong == null) return
@@ -65,7 +67,7 @@ fun BottomPlayerBar(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color.LightGray)
+                        .background(MiuixTheme.colorScheme.secondaryContainer)
                 )
             }
 
@@ -81,7 +83,7 @@ fun BottomPlayerBar(
                 Text(
                     text = currentSong?.artist ?: "未知艺术家",
                     fontSize = 12.sp,
-                    color = Color.Gray,
+                    color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     maxLines = 1
                 )
             }
@@ -91,21 +93,21 @@ fun BottomPlayerBar(
                 onClick = {
                     when (playbackState) {
                         PlaybackState.PLAYING -> {
-                            GlobalPlayerController.pause()
+                            Platform.playerController.pause()
                         }
                         PlaybackState.ERROR -> {
                             // 错误状态下点击重试
-                            GlobalPlayerController.play(currentSong!!)
+                            Platform.playerController.play(currentSong!!)
                         }
                         else -> {
-                            GlobalPlayerController.resume()
+                            Platform.playerController.resume()
                         }
                     }
                 }
             ) {
                  if (playbackState == PlaybackState.ERROR) {
-                     // 错误图标
-                     Text("!", color = Color.Red, fontWeight = FontWeight.Bold)
+                      // 错误图标
+                      Text("!", color = MiuixTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                  } else {
                     Icon(
                         imageVector = if (playbackState == PlaybackState.PLAYING) MiuixIcons.Pause else MiuixIcons.Play,
@@ -131,14 +133,14 @@ fun BottomPlayerBar(
         }
         
         // 错误提示
-        if (playbackState == PlaybackState.ERROR) {
-             Text(
-                 "播放出错",
-                 color = Color.Red,
-                 fontSize = 10.sp,
-                 modifier = Modifier.align(Alignment.TopEnd).padding(top = 2.dp, end = 8.dp)
-             )
-        }
+         if (playbackState == PlaybackState.ERROR) {
+              Text(
+                  "播放出错",
+                  color = MiuixTheme.colorScheme.error,
+                  fontSize = 10.sp,
+                  modifier = Modifier.align(Alignment.TopEnd).padding(top = 2.dp, end = 8.dp)
+              )
+         }
         
         // 进度条背景
         Box(
@@ -146,7 +148,7 @@ fun BottomPlayerBar(
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
                 .height(2.dp)
-                .background(Color.LightGray.copy(alpha = 0.3f))
+                .background(MiuixTheme.colorScheme.onSurface.copy(alpha = 0.1f))
         )
         
         // 进度条
@@ -157,18 +159,5 @@ fun BottomPlayerBar(
                 .height(2.dp)
                 .background(MiuixTheme.colorScheme.primary)
         )
-    }
-}
-
-@Composable
-fun IconButton(onClick: () -> Unit, content: @Composable () -> Unit) {
-    Box(
-        modifier = Modifier
-            .size(40.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        content()
     }
 }

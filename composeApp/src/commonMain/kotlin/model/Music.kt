@@ -17,7 +17,11 @@ data class Song(
     val albumArt: String? = null,
     val localCoverPath: String? = null,
     val localLyricsPath: String? = null,
-    val localAudioPath: String? = null
+    val localAudioPath: String? = null,
+    @SerialName("has_cover")
+    val hasCover: Boolean? = false,
+    @SerialName("has_lyrics")
+    val hasLyrics: Boolean? = false
 )
 
 

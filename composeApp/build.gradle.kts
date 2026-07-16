@@ -16,27 +16,15 @@ kotlin {
         compileSdk = 37
         minSdk = 28
         namespace = "top.msfxp.music.shared"
+        
+        withHostTest {
+        }
     }
     
     compilerOptions {
         freeCompilerArgs.add("-Xexpect-actual-classes")
     }
 
-    sourceSets.all {
-        languageSettings.optIn("androidx.media3.common.util.UnstableApi")
-    }
-
-    @OptIn(ExperimentalWasmDsl::class)
-    wasmJs {
-        outputModuleName.set("composeApp")
-        browser {
-            commonWebpackConfig {
-                outputFileName = "composeApp.js"
-            }
-        }
-        binaries.executable()
-    }
-    
     sourceSets {
         commonMain {
             dependencies {
@@ -79,13 +67,6 @@ kotlin {
                 implementation(libs.media3.session)
                 implementation(libs.media3.ui)
                 implementation(libs.sqldelight.android)
-            }
-        }
-
-        wasmJsMain {
-            dependencies {
-                implementation(libs.ktor.client.js)
-                implementation(libs.sqldelight.web)
             }
         }
     }

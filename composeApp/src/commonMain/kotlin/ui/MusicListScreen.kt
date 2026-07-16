@@ -13,7 +13,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
-import api.GlobalPlayerController
 import api.GlobalState
 import api.MusicApi
 import model.Song
@@ -43,7 +42,7 @@ fun MusicListScreen(
     
     var isSyncing by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    val currentSong by GlobalPlayerController.currentSong.collectAsState()
+    val currentSong by Platform.playerController.currentSong.collectAsState()
     val scope = rememberCoroutineScope()
     
     var searchQuery by remember { mutableStateOf("") }
@@ -167,7 +166,7 @@ fun MusicListScreen(
                         if (searchQuery.isNotBlank()) {
                             if (filteredSongs.isEmpty()) {
                                 Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
-                                    Text("未找到相关歌曲", style = TextStyle(color = Color.Gray))
+                                    Text("未找到相关歌曲", style = TextStyle(color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f)))
                                 }
                             } else {
                                 LazyColumn(
@@ -180,10 +179,10 @@ fun MusicListScreen(
                                             song = song,
                                             currentSong = currentSong,
                                             onClick = {
-                                                if (GlobalPlayerController.playlist.value != filteredSongs) {
-                                                    GlobalPlayerController.setPlaylist(filteredSongs)
+                                                if (Platform.playerController.playlist.value != filteredSongs) {
+                                                    Platform.playerController.setPlaylist(filteredSongs)
                                                 }
-                                                GlobalPlayerController.play(song)
+                                                Platform.playerController.play(song)
                                             },
                                             onAddToPlaylistClick = {
                                                 activeMenuSong = song
@@ -269,10 +268,10 @@ fun MusicListScreen(
                                     song = song,
                                     currentSong = currentSong,
                                     onClick = {
-                                        if (GlobalPlayerController.playlist.value != songs) {
-                                            GlobalPlayerController.setPlaylist(songs)
+                                        if (Platform.playerController.playlist.value != songs) {
+                                            Platform.playerController.setPlaylist(songs)
                                         }
-                                        GlobalPlayerController.play(song)
+                                        Platform.playerController.play(song)
                                     },
                                     onAddToPlaylistClick = {
                                         activeMenuSong = song
@@ -361,12 +360,13 @@ fun MusicListScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (playlists.isEmpty()) {
-                Text("暂无歌单", color = Color.Gray, modifier = Modifier.padding(vertical = 16.dp))
+                Text("暂无歌单", color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f), modifier = Modifier.padding(vertical = 16.dp))
             } else {
                 playlists.forEach { playlist ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
                             .clickable {
                                 activeMenuSong?.let { song ->
                                     scope.launch {
@@ -422,6 +422,7 @@ fun SongItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
             .clickable { onClick() }
     ) {
         Row(
@@ -444,7 +445,7 @@ fun SongItem(
                     modifier = Modifier
                         .size(56.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color.LightGray)
+                        .background(MiuixTheme.colorScheme.secondaryContainer)
                 )
             }
 
@@ -466,8 +467,8 @@ fun SongItem(
                     style = TextStyle(
                         fontSize = 14.sp,
                         color = if (isPlaying) MiuixTheme.colorScheme.primary.copy(
-                            alpha = 0.7f
-                        ) else Color.Gray
+                        alpha = 0.7f
+                    ) else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
                 )
             }
@@ -477,7 +478,7 @@ fun SongItem(
                     Icon(
                         imageVector = MiuixIcons.More,
                         contentDescription = "操作",
-                        tint = Color.LightGray
+                        tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                     )
                 }
 

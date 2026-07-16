@@ -34,7 +34,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import api.GlobalPlayerController
+import utils.Platform
 import api.GlobalState
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
@@ -72,9 +72,9 @@ fun App(platform: PlatformDependencies) {
         )
     }
 
-    val playlist by GlobalPlayerController.playlist.collectAsState()
+    val playlist by Platform.playerController.playlist.collectAsState()
     val showPlaylistState by GlobalState.showPlaylistState.collectAsState()
-    val currentIndex by GlobalPlayerController.currentIndex.collectAsState()
+    val currentIndex by Platform.playerController.currentIndex.collectAsState()
 
     // 处理安卓系统返回键
     BackHandler(enabled = showPlaylistState) {
@@ -205,7 +205,7 @@ fun App(platform: PlatformDependencies) {
                                     .fillMaxWidth()
                                     .padding(horizontal = 12.dp, vertical = 4.dp)
                                     .clickable {
-                                        GlobalPlayerController.playAtIndex(index)
+                                        Platform.playerController.playAtIndex(index)
                                         GlobalState.togglePlaylist(false)
                                     }
                             ) {

@@ -24,7 +24,7 @@ import utils.CoverUtil
 import androidx.core.net.toUri
 
 @androidx.media3.common.util.UnstableApi
-object AndroidPlayerController : PlayerController {
+object AndroidPlayerController : BasePlayerController() {
     private var _player: ExoPlayer? = null
     val player: ExoPlayer
         get() = _player ?: throw IllegalStateException("AndroidPlayerController 未初始化。")
@@ -70,10 +70,10 @@ object AndroidPlayerController : PlayerController {
                             Player.STATE_IDLE -> PlaybackState.IDLE
                             else -> PlaybackState.IDLE
                         }
-                        (this@AndroidPlayerController.playbackState as MutableStateFlow<PlaybackState>).value = newState
+                        this@AndroidPlayerController.playbackState.value = newState
                         
                         if (state == Player.STATE_READY) {
-                            (this@AndroidPlayerController.duration as MutableStateFlow<Long>).value = this@apply.duration
+                            this@AndroidPlayerController.duration.value = this@apply.duration
                             startProgressTracker()
                         } else {
                             stopProgressTracker()
@@ -87,15 +87,15 @@ object AndroidPlayerController : PlayerController {
                         } else {
                             this@AndroidPlayerController.playbackState.value
                         }
-                        (this@AndroidPlayerController.playbackState as MutableStateFlow<PlaybackState>).value = newState
+                        this@AndroidPlayerController.playbackState.value = newState
                     }
 
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                         val songId = mediaItem?.mediaId
                         val song = _currentPlaylist.find { it.id == songId }
-                        (this@AndroidPlayerController.currentSong as MutableStateFlow<Song?>).value = song
+                        currentSong.value = song
                         val index = _currentPlaylist.indexOfFirst { it.id == songId }
-                        (this@AndroidPlayerController.currentIndex as MutableStateFlow<Int>).value = index
+                        currentIndex.value = index
                     }
 
                     override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -121,7 +121,7 @@ object AndroidPlayerController : PlayerController {
                             content = errorMessage
                         )
 
-                        (this@AndroidPlayerController.playbackState as MutableStateFlow<PlaybackState>).value = PlaybackState.ERROR
+                        this@AndroidPlayerController.playbackState.value = PlaybackState.ERROR
                         stopProgressTracker()
                     }
                 })
@@ -137,15 +137,6 @@ object AndroidPlayerController : PlayerController {
     }
 
     private var _currentPlaylist: List<Song> = emptyList()
-
-    override val currentSong: StateFlow<Song?> = MutableStateFlow(null)
-    override val playbackState: StateFlow<PlaybackState> = MutableStateFlow(PlaybackState.IDLE)
-    override val playMode: StateFlow<PlayMode> = MutableStateFlow(PlayMode.LIST_LOOP)
-    override val progress: StateFlow<Float> = MutableStateFlow(0f)
-    override val duration: StateFlow<Long> = MutableStateFlow(0L)
-    override val currentPosition: StateFlow<Long> = MutableStateFlow(0L)
-    override val playlist: StateFlow<List<Song>> = MutableStateFlow(emptyList())
-    override val currentIndex: StateFlow<Int> = MutableStateFlow(-1)
 
     private fun getAuthParam(): String {
         val password = Platform.config.getPassword()
@@ -224,7 +215,7 @@ object AndroidPlayerController : PlayerController {
             player.play()
             // 更新当前队列为仅此一曲
             _currentPlaylist = listOf(song)
-            (playlist as MutableStateFlow<List<Song>>).value = _currentPlaylist
+            playlist.value = _currentPlaylist
         }
         updateService()
         saveState()
@@ -301,7 +292,7 @@ object AndroidPlayerController : PlayerController {
     }
 
     override fun setPlayMode(mode: PlayMode) {
-        (playMode as MutableStateFlow<PlayMode>).value = mode
+        playMode.value = mode
         when (mode) {
             PlayMode.LIST_LOOP -> {
                 player.repeatMode = Player.REPEAT_MODE_ALL
@@ -333,13 +324,13 @@ object AndroidPlayerController : PlayerController {
                 }
             }
             _currentPlaylist = songs
-            (playlist as MutableStateFlow<List<Song>>).value = songs
+            playlist.value = songs
             return
         }
 
         Platform.logger.i("Audio", "setPlaylist: 包含 ${songs.size} 首歌曲")
         _currentPlaylist = songs
-        (playlist as MutableStateFlow<List<Song>>).value = songs
+        playlist.value = songs
         val mediaItems = songs.map { createMediaItem(it) }
         player.setMediaItems(mediaItems)
         player.prepare()
@@ -365,8 +356,8 @@ object AndroidPlayerController : PlayerController {
                     val pos = player.currentPosition
                     val dur = player.duration
                     if (dur > 0) {
-                        (this@AndroidPlayerController.currentPosition as MutableStateFlow<Long>).value = pos
-                        (this@AndroidPlayerController.progress as MutableStateFlow<Float>).value = pos.toFloat() / dur.toFloat()
+                        currentPosition.value = pos
+                        progress.value = pos.toFloat() / dur.toFloat()
                         
                         // 每 10 秒保存一次进度
                         if ((Platform.getTimeMillis() % 10000L) < 500L) {
@@ -405,7 +396,7 @@ object AndroidPlayerController : PlayerController {
         // 2. 恢复播放列表
         if (data.playlist.isNotEmpty()) {
             _currentPlaylist = data.playlist
-            (playlist as MutableStateFlow<List<Song>>).value = _currentPlaylist
+            playlist.value = _currentPlaylist
             val mediaItems = _currentPlaylist.map { createMediaItem(it) }
             player.setMediaItems(mediaItems)
             

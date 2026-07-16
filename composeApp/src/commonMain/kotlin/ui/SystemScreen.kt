@@ -136,9 +136,9 @@ fun SystemScreen(modifier: Modifier = Modifier) {
                             StatusRow("歌单数量", s.playlistCount.toString())
                         }
                     } else if (isInitialLoading) {
-                        Text("正在连接服务器...", color = Color.Gray, modifier = Modifier.padding(vertical = 8.dp))
+                        Text("正在连接服务器...", color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f), modifier = Modifier.padding(vertical = 8.dp))
                     } else {
-                        Text(errorMessage ?: "无法连接到服务器", color = Color.Red, modifier = Modifier.padding(vertical = 8.dp))
+                        Text(errorMessage ?: "无法连接到服务器", color = MiuixTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp))
                     }
                 }
             }
@@ -213,7 +213,8 @@ fun SystemScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun StatusRow(label: String, value: String, valueColor: Color = Color.Gray) {
+fun StatusRow(label: String, value: String, valueColor: Color? = null) {
+    val resolvedColor = valueColor ?: MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -222,6 +223,6 @@ fun StatusRow(label: String, value: String, valueColor: Color = Color.Gray) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(label, fontSize = 16.sp)
-        Text(value, color = valueColor, fontSize = 14.sp)
+        Text(value, color = resolvedColor, fontSize = 14.sp)
     }
 }

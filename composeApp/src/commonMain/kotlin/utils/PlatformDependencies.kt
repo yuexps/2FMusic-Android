@@ -3,6 +3,8 @@ package utils
 import config.AppConfig
 import data.MusicRepository
 
+import api.PlayerController
+
 /**
  * 聚合所有平台相关的依赖逻辑
  */
@@ -12,5 +14,6 @@ data class PlatformDependencies(
     val logger: Logger,
     val toast: Toast,
     val notification: NotificationHelper,
+    val playerController: PlayerController,
     val isWasm: Boolean = false
 )

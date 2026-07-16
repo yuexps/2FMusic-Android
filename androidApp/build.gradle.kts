@@ -36,9 +36,6 @@ android {
 
 kotlin {
     jvmToolchain(21)
-    compilerOptions {
-        freeCompilerArgs.add("-opt-in=androidx.media3.common.util.UnstableApi")
-    }
 }
 
 dependencies {

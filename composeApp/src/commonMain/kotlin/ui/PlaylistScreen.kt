@@ -18,7 +18,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import api.GlobalPlayerController
 import com.seiko.imageloader.ui.AutoSizeImage
 import model.Playlist
 import model.Song
@@ -148,7 +147,7 @@ fun PlaylistScreen(
                                     Text(playlist.name, style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Medium))
                                     Text(
                                         "${playlist.songCount} 首歌曲" + if (playlist.isDefault == 1) " · 默认" else "",
-                                        style = TextStyle(fontSize = 14.sp, color = Color.Gray)
+                                        style = TextStyle(fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                                     )
                                 }
 
@@ -156,7 +155,7 @@ fun PlaylistScreen(
                                     Icon(
                                         imageVector = MiuixIcons.ChevronForward,
                                         contentDescription = null,
-                                        tint = Color.LightGray
+                                        tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                                     )
                                 } else {
                                     Box {
@@ -164,7 +163,7 @@ fun PlaylistScreen(
                                             Icon(
                                                 imageVector = MiuixIcons.More,
                                                 contentDescription = "操作",
-                                                tint = Color.LightGray
+                                                tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                                             )
                                         }
                                         
@@ -208,10 +207,10 @@ fun PlaylistScreen(
                             SongItem(
                                 song = song,
                                 onClick = {
-                                    if (GlobalPlayerController.playlist.value != playlistSongs) {
-                                        GlobalPlayerController.setPlaylist(playlistSongs)
+                                    if (Platform.playerController.playlist.value != playlistSongs) {
+                                        Platform.playerController.setPlaylist(playlistSongs)
                                     }
-                                    GlobalPlayerController.play(song)
+                                    Platform.playerController.play(song)
                                 },
                                 showRemoveOption = true,
                                 onRemoveClick = {
@@ -346,12 +345,13 @@ fun PlaylistScreen(
             val targetPlaylists = playlists.filter { selectedPlaylist == null || it.id != selectedPlaylist?.id }
             
             if (targetPlaylists.isEmpty()) {
-                Text("暂无可选择的其它歌单", color = Color.Gray, modifier = Modifier.padding(vertical = 16.dp))
+                Text("暂无可选择的其它歌单", color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f), modifier = Modifier.padding(vertical = 16.dp))
             } else {
                 targetPlaylists.forEach { playlist ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
                             .clickable {
                                 activeMenuSong?.let { song ->
                                     coroutineScope.launch {
@@ -407,13 +407,14 @@ fun SongItem(
     onAddToOtherClick: () -> Unit = {},
     onMoveToOtherClick: () -> Unit = {}
 ) {
-    val currentSong by GlobalPlayerController.currentSong.collectAsState()
+    val currentSong by Platform.playerController.currentSong.collectAsState()
     val isPlaying = currentSong?.id == song.id
     var showMenu by remember { mutableStateOf(false) }
     
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
             .clickable { onClick() }
     ) {
         Row(
@@ -435,7 +436,7 @@ fun SongItem(
                     modifier = Modifier
                         .size(56.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color.LightGray)
+                        .background(MiuixTheme.colorScheme.secondaryContainer)
                 )
             }
             
@@ -454,7 +455,7 @@ fun SongItem(
                     song.artist ?: "未知艺术家",
                     style = TextStyle(
                         fontSize = 14.sp,
-                        color = if (isPlaying) MiuixTheme.colorScheme.primary.copy(alpha = 0.7f) else Color.Gray
+                        color = if (isPlaying) MiuixTheme.colorScheme.primary.copy(alpha = 0.7f) else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
                 )
             }
@@ -464,7 +465,7 @@ fun SongItem(
                     Icon(
                         imageVector = MiuixIcons.More,
                         contentDescription = "操作",
-                        tint = Color.LightGray
+                        tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                     )
                 }
                 

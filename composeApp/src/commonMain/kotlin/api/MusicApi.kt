@@ -69,12 +69,13 @@ class MusicApi {
         return ApiResponse(success = true)
     }
 
-    suspend fun getLyrics(songId: String, title: String, artist: String?, filename: String?): LyricsResponse {
+    suspend fun getLyrics(songId: String, title: String, artist: String?, filename: String?, yrc: Boolean? = null): LyricsResponse {
         val data = buildJsonObject {
             put("song_id", songId)
             put("title", title)
-            put("artist", artist)
-            put("filename", filename)
+            if (artist != null) put("artist", artist)
+            if (filename != null) put("filename", filename)
+            if (yrc != null) put("yrc", yrc)
         }
         return sendRequest<LyricsResponse>("music/lyrics", data) ?: LyricsResponse()
     }
@@ -204,8 +205,8 @@ class MusicApi {
 
     suspend fun addFavorite(songId: String, playlistId: String = "default"): ApiResponse<Unit> {
         val data = buildJsonObject {
-            put("song_id", songId)
-            put("playlist_id", playlistId)
+            putJsonArray("song_ids") { add(songId) }
+            putJsonArray("playlist_ids") { add(playlistId) }
         }
         sendRequest<Unit>("favorite/add", data)
         return ApiResponse(success = true)
@@ -213,8 +214,8 @@ class MusicApi {
 
     suspend fun removeFavorite(songId: String, playlistId: String = "default"): ApiResponse<Unit> {
         val data = buildJsonObject {
-            put("song_id", songId)
-            put("playlist_id", playlistId)
+            putJsonArray("song_ids") { add(songId) }
+            putJsonArray("playlist_ids") { add(playlistId) }
         }
         sendRequest<Unit>("favorite/delete", data)
         return ApiResponse(success = true)

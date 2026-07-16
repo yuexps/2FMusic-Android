@@ -20,7 +20,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import api.GlobalPlayerController
 import api.MusicApi
 import api.GlobalState
 import model.PlayMode
@@ -60,18 +59,18 @@ fun PlayerScreen(
     onClose: () -> Unit,
     repository: MusicRepository
 ) {
-    val currentSong by GlobalPlayerController.currentSong.collectAsState()
-    val playbackState by GlobalPlayerController.playbackState.collectAsState()
-    val playMode by GlobalPlayerController.playMode.collectAsState()
-    val duration by GlobalPlayerController.duration.collectAsState()
-    val currentPosition by GlobalPlayerController.currentPosition.collectAsState()
+    val currentSong by Platform.playerController.currentSong.collectAsState()
+    val playbackState by Platform.playerController.playbackState.collectAsState()
+    val playMode by Platform.playerController.playMode.collectAsState()
+    val duration by Platform.playerController.duration.collectAsState()
+    val currentPosition by Platform.playerController.currentPosition.collectAsState()
     
     val scope = rememberCoroutineScope()
     var lyrics by remember { mutableStateOf<List<LrcLine>>(emptyList()) }
     var isLoadingLyrics by remember { mutableStateOf(false) }
     
     val api = remember { MusicApi() }
-    val playlist by GlobalPlayerController.playlist.collectAsState()
+    val playlist by Platform.playerController.playlist.collectAsState()
 
     val favoriteIds by GlobalState.favoriteIds.collectAsState()
     val isFavorite = currentSong?.let { favoriteIds.contains(it.id) } ?: false
@@ -251,7 +250,7 @@ fun PlayerScreen(
                                     .aspectRatio(1f)
                                     .clip(RoundedCornerShape(24.dp))
                                     .shadow(elevation = 16.dp)
-                                    .background(Color.LightGray)
+                                    .background(MiuixTheme.colorScheme.secondaryContainer)
                             ) {
                                 if (albumArtUrl != null) {
                                     com.seiko.imageloader.ui.AutoSizeImage(
@@ -279,7 +278,7 @@ fun PlayerScreen(
                             ) {
                                 Text(
                                     text = if (isLoadingLyrics) "加载中..." else "暂无歌词",
-                                    color = Color.Gray
+                                    color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                 )
                             }
                         }
@@ -336,7 +335,7 @@ fun PlayerScreen(
                             imageVector = if (isFavorite) MiuixIcons.Demibold.Favorites else MiuixIcons.Demibold.Favorites, // 保持图标一致，颜色不同
                             contentDescription = "Favorite",
                             modifier = Modifier.size(28.dp),
-                            tint = if (isFavorite) Color.Red else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                            tint = if (isFavorite) MiuixTheme.colorScheme.error else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                         )
                     }
                 }
@@ -355,7 +354,7 @@ fun PlayerScreen(
                         onValueChangeFinished = {
                             sliderValue?.let {
                                 val seekPos = (it * duration).toLong()
-                                GlobalPlayerController.seekTo(seekPos)
+                                Platform.playerController.seekTo(seekPos)
                                 // 延迟 500ms 后再清空 sliderValue, 防止寻道时的旧状态回弹
                                 scope.launch {
                                     delay(500)
@@ -375,8 +374,8 @@ fun PlayerScreen(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(formatTime(sliderValue?.let { (it * duration).toLong() } ?: currentPosition), fontSize = 12.sp, color = Color.Gray)
-                        Text(formatTime(duration), fontSize = 12.sp, color = Color.Gray)
+                        Text(formatTime(sliderValue?.let { (it * duration).toLong() } ?: currentPosition), fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                        Text(formatTime(duration), fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                     }
                 }
 
@@ -397,7 +396,7 @@ fun PlayerScreen(
                             PlayMode.SINGLE_LOOP -> PlayMode.RANDOM
                             PlayMode.RANDOM -> PlayMode.LIST_LOOP
                         }
-                        GlobalPlayerController.setPlayMode(nextMode)
+                        Platform.playerController.setPlayMode(nextMode)
 
                     }) {
                         when (playMode) {
@@ -437,7 +436,7 @@ fun PlayerScreen(
                             .clip(RoundedCornerShape(28.dp))
                             .clickable {
                                 Platform.logger.i("PlayerScreen", "点击上一曲按钮")
-                                GlobalPlayerController.previous()
+                                Platform.playerController.previous()
                             },
                         contentAlignment = Alignment.Center
                     ) {
@@ -456,8 +455,8 @@ fun PlayerScreen(
                             .clip(RoundedCornerShape(34.dp))
                             .background(MiuixTheme.colorScheme.primary)
                             .clickable {
-                                if (playbackState == PlaybackState.PLAYING) GlobalPlayerController.pause()
-                                else if (playbackState == PlaybackState.PAUSED || playbackState == PlaybackState.IDLE) GlobalPlayerController.resume()
+                                if (playbackState == PlaybackState.PLAYING) Platform.playerController.pause()
+                                else if (playbackState == PlaybackState.PAUSED || playbackState == PlaybackState.IDLE) Platform.playerController.resume()
                             },
                         contentAlignment = Alignment.Center
                     ) {
@@ -482,7 +481,7 @@ fun PlayerScreen(
                             .clip(RoundedCornerShape(28.dp))
                             .clickable {
                                 Platform.logger.i("PlayerScreen", "点击下一曲按钮")
-                                GlobalPlayerController.next()
+                                Platform.playerController.next()
                             },
                         contentAlignment = Alignment.Center
                     ) {
@@ -543,10 +542,10 @@ fun PlayerScreen(
                                     repository.deleteLocalAudio(sid) // 同时删除本地文件
                                     GlobalState.triggerRefresh()
                                     val newList = playlist.filter { it.id != sid }
-                                    GlobalPlayerController.setPlaylist(newList)
+                                    Platform.playerController.setPlaylist(newList)
                                     
                                     // 删除后停止播放并返回列表
-                                    GlobalPlayerController.stop()
+                                    Platform.playerController.stop()
                                     onClose()
                                     
                                     Platform.toast.show("已删除：$songTitle")
