@@ -43,3 +43,27 @@ bin/
 .DS_Store
 androidApp-release.apk
 androidApp-release.dm
+
+# Local developer settings (contains local SDK path)
+local.properties
+
+# Build outputs and temporary packages
+androidApp/release/
+*.apk
+*.aar
+*.jar
+
+# Kotlin/JS compilation caches
+kotlin-js-store/
+
+# Signing keys & certificates (sensitive credentials)
+*.jks
+*.keystore
+*.pepk
+
+# Android Studio local configs & workspace cache
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/shelf/
+.idea/caches/
+.idea/assetWizardSettings.xml
