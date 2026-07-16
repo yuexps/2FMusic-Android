@@ -100,10 +100,14 @@ fun PlayerScreen(
     val showDetailsDialog = remember { mutableStateOf(false) }
     var lyricFontSize by remember { mutableFloatStateOf(Platform.config.getLyricFontSize()) }
     var lyricTranslationMode by remember { mutableIntStateOf(Platform.config.getLyricTranslationMode()) }
+    var showLyricsInNotification by remember { mutableStateOf(Platform.config.getShowLyricsInNotification()) }
     var showSongActions by remember { mutableStateOf(false) }
     val remainingSecondsState by utils.SleepTimerManager.remainingSeconds.collectAsState()
     var showSleepTimerSettings by remember { mutableStateOf(false) }
     var showEqualizerSettings by remember { mutableStateOf(false) }
+    var isEqualizerEnabled by remember { mutableStateOf(Platform.playerController.isEqualizerEnabled()) }
+    var selectedTimerHour by remember { mutableIntStateOf(0) }
+    var selectedTimerMinute by remember { mutableIntStateOf(0) }
     
     val localSongs by repository.getLocalSongs().collectAsState(initial = emptyList())
     val downloadedSongIds = remember(localSongs) {
@@ -229,11 +233,27 @@ fun PlayerScreen(
                             text = "歌词大小",
                             children = listOf(
                                 DropdownItem(
+                                    text = "极小 (16 sp)",
+                                    selected = lyricFontSize == 16f,
+                                    onClick = {
+                                        lyricFontSize = 16f
+                                        Platform.config.setLyricFontSize(16f)
+                                    }
+                                ),
+                                DropdownItem(
                                     text = "小 (18 sp)",
                                     selected = lyricFontSize == 18f,
                                     onClick = {
                                         lyricFontSize = 18f
                                         Platform.config.setLyricFontSize(18f)
+                                    }
+                                ),
+                                DropdownItem(
+                                    text = "默认 (20 sp)",
+                                    selected = lyricFontSize == 20f,
+                                    onClick = {
+                                        lyricFontSize = 20f
+                                        Platform.config.setLyricFontSize(20f)
                                     }
                                 ),
                                 DropdownItem(
@@ -250,6 +270,22 @@ fun PlayerScreen(
                                     onClick = {
                                         lyricFontSize = 26f
                                         Platform.config.setLyricFontSize(26f)
+                                    }
+                                ),
+                                DropdownItem(
+                                    text = "特大 (30 sp)",
+                                    selected = lyricFontSize == 30f,
+                                    onClick = {
+                                        lyricFontSize = 30f
+                                        Platform.config.setLyricFontSize(30f)
+                                    }
+                                ),
+                                DropdownItem(
+                                    text = "超大 (34 sp)",
+                                    selected = lyricFontSize == 34f,
+                                    onClick = {
+                                        lyricFontSize = 34f
+                                        Platform.config.setLyricFontSize(34f)
                                     }
                                 )
                             )
@@ -279,6 +315,29 @@ fun PlayerScreen(
                                     onClick = {
                                         lyricTranslationMode = 2
                                         Platform.config.setLyricTranslationMode(2)
+                                    }
+                                )
+                            )
+                        ),
+                        DropdownItem(
+                            text = "歌词显示",
+                            children = listOf(
+                                DropdownItem(
+                                    text = "开启",
+                                    selected = showLyricsInNotification,
+                                    onClick = {
+                                        showLyricsInNotification = true
+                                        Platform.config.setShowLyricsInNotification(true)
+                                        Platform.playerController.updateLyricsMetadata()
+                                    }
+                                ),
+                                DropdownItem(
+                                    text = "关闭",
+                                    selected = !showLyricsInNotification,
+                                    onClick = {
+                                        showLyricsInNotification = false
+                                        Platform.config.setShowLyricsInNotification(false)
+                                        Platform.playerController.updateLyricsMetadata()
                                     }
                                 )
                             )
@@ -447,7 +506,7 @@ fun PlayerScreen(
                             imageVector = MiuixIcons.Tune,
                             contentDescription = "Sound Effect",
                             modifier = Modifier.size(22.dp),
-                            tint = if (Platform.playerController.isEqualizerEnabled()) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            tint = if (isEqualizerEnabled) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
                     }
                     IconButton(onClick = {
@@ -968,6 +1027,49 @@ fun PlayerScreen(
             title = "定时关闭",
             onDismissRequest = { showSleepTimerSettings = false }
         ) {
+            val estimatedMinutes by remember(selectedTimerHour, selectedTimerMinute) {
+                derivedStateOf { selectedTimerHour * 60 + selectedTimerMinute }
+            }
+
+            val timeEstimateText by remember(estimatedMinutes) {
+                derivedStateOf {
+                    Platform.playerController.getEstimatedShutdownTime(estimatedMinutes)
+                }
+            }
+
+            // 1. 打开弹窗时，将后台当前的倒计时时间同步到轮盘状态中
+            LaunchedEffect(showSleepTimerSettings) {
+                if (showSleepTimerSettings) {
+                    val seconds = utils.SleepTimerManager.remainingSeconds.value
+                    if (seconds != null && seconds > 0) {
+                        val remMinutes = (seconds + 59) / 60
+                        selectedTimerHour = remMinutes / 60
+                        selectedTimerMinute = remMinutes % 60
+                    } else {
+                        selectedTimerHour = 0
+                        selectedTimerMinute = 0
+                    }
+                }
+            }
+
+            // 2. 轮盘数值改变时，防抖 500 毫秒后自动触发开启/更新或取消
+            LaunchedEffect(selectedTimerHour, selectedTimerMinute) {
+                if (showSleepTimerSettings) {
+                    delay(500)
+                    val finalMinutes = selectedTimerHour * 60 + selectedTimerMinute
+                    val currentSeconds = utils.SleepTimerManager.remainingSeconds.value
+                    val currentMinutes = if (currentSeconds != null) (currentSeconds + 59) / 60 else 0
+                    
+                    if (finalMinutes != currentMinutes) {
+                        if (finalMinutes > 0) {
+                            utils.SleepTimerManager.startTimer(finalMinutes)
+                        } else {
+                            utils.SleepTimerManager.stopTimer()
+                        }
+                    }
+                }
+            }
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -977,7 +1079,17 @@ fun PlayerScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
 
-                remainingSecondsState?.let { seconds ->
+                if (remainingSecondsState == null && estimatedMinutes > 0) {
+                    Text(
+                        text = timeEstimateText,
+                        fontSize = 13.sp,
+                        color = MiuixTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 16.dp),
+                        textAlign = TextAlign.Center
+                    )
+                } else {
+                    val seconds = remainingSecondsState!!
                     val min = seconds / 60
                     val sec = seconds % 60
                     Text(
@@ -992,45 +1104,69 @@ fun PlayerScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    val options = listOf(
-                        "5 分钟" to 5,
-                        "15 分钟" to 15,
-                        "30 分钟" to 30,
-                        "60 分钟" to 60,
-                        "自定义 5 秒 (调试验证)" to -1
-                    )
-
-                    options.forEach { (label, minutes) ->
-                        BasicComponent(
-                            title = label,
-                            onClick = {
-                                showSleepTimerSettings = false
-                                if (minutes == -1) {
-                                    utils.SleepTimerManager.startTimerSeconds(5)
-                                } else {
-                                    utils.SleepTimerManager.startTimer(minutes)
-                                }
-                                Platform.toast.show("已设定 $label 后关闭")
-                            }
-                        )
-                    }
-
-                    if (remainingSecondsState != null) {
-                        BasicComponent(
-                            onClick = {
-                                showSleepTimerSettings = false
-                                utils.SleepTimerManager.stopTimer()
-                                Platform.toast.show("已取消定时关闭")
-                            }
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+                            NumberPicker(
+                                value = selectedTimerHour,
+                                onValueChange = { selectedTimerHour = it },
+                                range = 0..12,
+                                label = { it.toString().padStart(2, '0') },
+                                wrapAround = true,
+                                visibleItemCount = 3,
+                                modifier = Modifier.width(60.dp)
+                            )
+
+                            Spacer(modifier = Modifier.width(24.dp))
+
                             Text(
-                                text = "关闭定时",
-                                color = Color.Red,
-                                fontWeight = FontWeight.Bold
+                                text = ":",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+
+                            Spacer(modifier = Modifier.width(24.dp))
+
+                            NumberPicker(
+                                value = selectedTimerMinute,
+                                onValueChange = { selectedTimerMinute = it },
+                                range = 0..59,
+                                label = { it.toString().padStart(2, '0') },
+                                wrapAround = true,
+                                visibleItemCount = 3,
+                                modifier = Modifier.width(60.dp)
                             )
                         }
                     }
                 }
+
+                if (remainingSecondsState != null) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            showSleepTimerSettings = false
+                            utils.SleepTimerManager.stopTimer()
+                            Platform.toast.show("已取消定时关闭")
+                            selectedTimerHour = 0
+                            selectedTimerMinute = 0
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            color = Color.Red.copy(alpha = 0.1f),
+                            contentColor = Color.Red
+                        )
+                    ) {
+                        Text("取消定时关闭", fontWeight = FontWeight.Bold)
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(12.dp))
             }
         }
@@ -1051,6 +1187,71 @@ fun PlayerScreen(
                 val bands = Platform.playerController.getEqualizerBands()
                 var levels by remember { mutableStateOf(Platform.playerController.getEqualizerBandLevels()) }
 
+                val presets = remember {
+                    listOf(
+                        "原声" to listOf(0, 0, 0, 0, 0),
+                        "流行" to listOf(300, 200, -100, 200, 400),
+                        "摇滚" to listOf(500, 300, -200, 400, 600),
+                        "低音" to listOf(800, 400, 0, 0, 0),
+                        "声乐" to listOf(-200, 0, 600, 300, -100)
+                    )
+                }
+
+                val matchingPresetIndex by remember(levels, isEqualizerEnabled) {
+                    derivedStateOf {
+                        if (!isEqualizerEnabled) {
+                            0
+                        } else {
+                            val idx = presets.indexOfFirst { preset ->
+                                val presetVals = preset.second
+                                if (levels.size >= presetVals.size) {
+                                    val prefix = levels.take(presetVals.size)
+                                    val suffix = levels.drop(presetVals.size)
+                                    prefix == presetVals && suffix.all { it == 0 }
+                                } else {
+                                    false
+                                }
+                            }
+                            idx
+                        }
+                    }
+                }
+
+                val tabs = remember(matchingPresetIndex) {
+                    if (matchingPresetIndex == -1) {
+                        presets.map { it.first } + "自定义"
+                    } else {
+                        presets.map { it.first }
+                    }
+                }
+
+                val selectedTabIndex = if (matchingPresetIndex == -1) presets.size else matchingPresetIndex
+
+                TabRowWithContour(
+                    selectedTabIndex = selectedTabIndex,
+                    tabs = tabs,
+                    onTabSelected = { tabIndex ->
+                        if (tabIndex < presets.size) {
+                            val (_, bandVals) = presets[tabIndex]
+                            val totalBands = Platform.playerController.getEqualizerBands().size
+                            for (i in 0 until totalBands) {
+                                val level = bandVals.getOrNull(i) ?: 0
+                                Platform.playerController.setEqualizerBandLevel(i, level)
+                            }
+                            
+                            if (tabIndex == 0) {
+                                Platform.playerController.setEqualizerEnabled(false)
+                                isEqualizerEnabled = false
+                            } else {
+                                Platform.playerController.setEqualizerEnabled(true)
+                                isEqualizerEnabled = true
+                            }
+                            levels = Platform.playerController.getEqualizerBandLevels()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                )
+
                 Card(
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -1063,7 +1264,7 @@ fun PlayerScreen(
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
-                            ) {
+                              ) {
                                 Text(
                                     text = bandName,
                                     fontSize = 13.sp,
@@ -1080,6 +1281,8 @@ fun PlayerScreen(
                                             levels = newList
                                         }
                                         Platform.playerController.setEqualizerBandLevel(index, valInt)
+                                        Platform.playerController.setEqualizerEnabled(true)
+                                        isEqualizerEnabled = true
                                     },
                                     valueRange = -1500f..1500f,
                                     modifier = Modifier.weight(1f),
@@ -1097,53 +1300,6 @@ fun PlayerScreen(
                                     modifier = Modifier.width(55.dp),
                                     textAlign = TextAlign.End
                                 )
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(
-                    text = "快捷预设",
-                    fontSize = 14.sp,
-                    color = MiuixTheme.colorScheme.onSurface,
-                    modifier = Modifier.align(Alignment.Start).padding(horizontal = 4.dp, vertical = 6.dp)
-                )
-
-                // 原声 = 所有频段归零，等同于关闭均衡器
-                val presets = listOf(
-                    "原声" to listOf(0, 0, 0, 0, 0),
-                    "流行" to listOf(300, 200, -100, 200, 400),
-                    "摇滚" to listOf(500, 300, -200, 400, 600),
-                    "低音" to listOf(800, 400, 0, 0, 0),
-                    "声乐" to listOf(-200, 0, 600, 300, -100)
-                )
-
-                Card(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        presets.forEach { (name, bandVals) ->
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(MiuixTheme.colorScheme.onSurfaceVariantActions.copy(alpha = 0.06f))
-                                    .clickable {
-                                        bandVals.forEachIndexed { idx, valDb ->
-                                            Platform.playerController.setEqualizerBandLevel(idx, valDb)
-                                        }
-                                        levels = Platform.playerController.getEqualizerBandLevels()
-                                        Platform.toast.show("已套用 $name 预设")
-                                    }
-                                    .padding(vertical = 8.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(text = name, fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurface)
                             }
                         }
                     }

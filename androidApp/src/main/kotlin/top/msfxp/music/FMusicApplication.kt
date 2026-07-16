@@ -8,16 +8,14 @@ class FMusicApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         
-        // 1. 初始化文件存储环境 (用于数据库等)
-        val storageDir = getExternalFilesDir(null)?.absolutePath ?: filesDir.absolutePath
-        utils.FileStore.initialize(storageDir)
+        // 1. 实例化配置并初始化文件存储环境
+        val config = config.AndroidAppConfig().apply { initialize(this@FMusicApplication) }
+        utils.FileStore.initialize(config.getStorageDirPath())
         
         // 2. 实例化平台依赖
         val mApi = api.MusicApi()
         val driverFactory = database.DatabaseDriverFactory(this)
         val repository = data.SqlMusicRepository(mApi, driverFactory)
-        
-        val config = config.AndroidAppConfig().apply { initialize(this@FMusicApplication) }
         val logger = utils.AndroidLogger()
         val toast = utils.AndroidToast().apply { init(this@FMusicApplication) }
         val notification = utils.AndroidNotificationHelper().apply { init(this@FMusicApplication) }

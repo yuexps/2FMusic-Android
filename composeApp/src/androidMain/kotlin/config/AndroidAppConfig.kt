@@ -12,14 +12,29 @@ class AndroidAppConfig : AppConfig {
         private const val KEY_BASE_URL = "app_base_url"
         private const val KEY_PASSWORD = "app_password"
         private const val KEY_PLAYBACK_STATE = "playback_state"
-        private const val DEFAULT_BASE_URL = "http://localhost:23237"
+        private const val DEFAULT_BASE_URL = "http://192.168.31.254:23237"
     }
     
     private var prefs: SharedPreferences? = null
+    private var appContext: Context? = null
+    private var appStorageDir: String = ""
     
     override fun initialize(context: Any?) {
         if (context is Context) {
+            appContext = context.applicationContext
             prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            recalculateStorageDir()
+        }
+    }
+
+    private fun recalculateStorageDir() {
+        val context = appContext ?: return
+        val type = getStorageType()
+        appStorageDir = if (type == 1) {
+            val extMusic = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MUSIC).absolutePath
+            "$extMusic/2FMusic"
+        } else {
+            context.getExternalFilesDir(null)?.absolutePath ?: context.filesDir.absolutePath
         }
     }
     
@@ -82,5 +97,28 @@ class AndroidAppConfig : AppConfig {
 
     override fun setLyricTranslationMode(mode: Int) {
         getPrefs().edit { putInt("lyric_translation_mode", mode) }
+    }
+
+    override fun getShowLyricsInNotification(): Boolean {
+        return getPrefs().getBoolean("show_lyrics_in_notification", true)
+    }
+
+    override fun setShowLyricsInNotification(show: Boolean) {
+        getPrefs().edit { putBoolean("show_lyrics_in_notification", show) }
+    }
+
+    override fun getStorageType(): Int {
+        return getPrefs().getInt("app_storage_type", 0)
+    }
+
+    override fun setStorageType(type: Int) {
+        getPrefs().edit { putInt("app_storage_type", type) }
+        recalculateStorageDir()
+        // 热更新物理数据存储路径
+        utils.FileStore.initialize(appStorageDir)
+    }
+
+    override fun getStorageDirPath(): String {
+        return appStorageDir
     }
 }

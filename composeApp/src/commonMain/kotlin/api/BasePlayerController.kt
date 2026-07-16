@@ -21,4 +21,5 @@ abstract class BasePlayerController : PlayerController {
     override fun getEqualizerBands(): List<String> = emptyList()
     override fun getEqualizerBandLevels(): List<Int> = emptyList()
     override fun setEqualizerBandLevel(band: Int, level: Int) {}
+    override fun getEstimatedShutdownTime(minutes: Int): String = "${minutes} 分钟后"
 }

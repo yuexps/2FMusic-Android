@@ -1,6 +1,7 @@
 package api
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.Intent
 import android.net.Uri
 import androidx.media3.common.AudioAttributes
@@ -33,11 +34,23 @@ object AndroidPlayerController : BasePlayerController() {
     private var appContext: Context? = null
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var progressJob: Job? = null
+    private var currentLyricsList: List<utils.LrcLine> = emptyList()
+    private var lastPostedLyricText: String? = null
+    private var lastPostedLyricArtist: String? = null
 
     fun initialize(context: Context) {
         if (isInitialized) return
         this.appContext = context.applicationContext
         val appContext = this.appContext!!
+        
+        // 恢复均衡器持久化配置
+        val prefs = appContext.getSharedPreferences("2fmusic_prefs", Context.MODE_PRIVATE)
+        eqEnabled = prefs.getBoolean("eq_enabled", false)
+        for (i in 0..15) {
+            if (prefs.contains("eq_band_$i")) {
+                bandLevels[i] = prefs.getInt("eq_band_$i", 0)
+            }
+        }
         
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
@@ -97,6 +110,18 @@ object AndroidPlayerController : BasePlayerController() {
                         currentSong.value = song
                         val index = _currentPlaylist.indexOfFirst { it.id == songId }
                         currentIndex.value = index
+
+                        lastPostedLyricText = null
+                        lastPostedLyricArtist = null
+                        currentLyricsList = emptyList()
+                        song?.let { s ->
+                            scope.launch(Dispatchers.IO) {
+                                val localLrc = utils.FileStore.readLyrics(s.id)
+                                if (localLrc != null) {
+                                    currentLyricsList = utils.LrcParser.parse(localLrc, s.title)
+                                }
+                            }
+                        }
                     }
 
                     override fun onAudioSessionIdChanged(audioSessionId: Int) {
@@ -292,6 +317,7 @@ object AndroidPlayerController : BasePlayerController() {
 
     override fun seekTo(position: Long) {
         player.seekTo(position)
+        updateLyricsMetadata(position)
         saveState()
     }
 
@@ -363,6 +389,8 @@ object AndroidPlayerController : BasePlayerController() {
                         currentPosition.value = pos
                         progress.value = pos.toFloat() / dur.toFloat()
                         
+                        updateLyricsMetadata(pos)
+
                         // 每 10 秒保存一次进度
                         if ((Platform.getTimeMillis() % 10000L) < 500L) {
                             saveState()
@@ -414,6 +442,57 @@ object AndroidPlayerController : BasePlayerController() {
         }
     }
 
+    override fun updateLyricsMetadata() {
+        val player = _player ?: return
+        updateLyricsMetadata(player.currentPosition)
+    }
+
+    private fun updateLyricsMetadata(pos: Long) {
+        val song = currentSong.value ?: return
+        val player = _player ?: return
+        
+        val showLyrics = Platform.config.getShowLyricsInNotification()
+        
+        var lyricText: String? = null
+        if (showLyrics && currentLyricsList.isNotEmpty()) {
+            val idx = utils.LrcParser.getCurrentLineIndex(currentLyricsList, pos)
+            if (idx in currentLyricsList.indices) {
+                lyricText = currentLyricsList[idx].lines.firstOrNull()
+            }
+        }
+        
+        val hasLyric = !lyricText.isNullOrBlank()
+        val targetTitle = if (hasLyric) lyricText else (song.title ?: song.filename)
+        val targetArtist = if (hasLyric) {
+            "${song.title ?: "未知歌名"} - ${song.artist ?: "未知艺术家"}"
+        } else {
+            song.artist ?: "未知艺术家"
+        }
+        
+        if (lastPostedLyricText == targetTitle && lastPostedLyricArtist == targetArtist) return
+        lastPostedLyricText = targetTitle
+        lastPostedLyricArtist = targetArtist
+        
+        try {
+            val currentMediaItem = player.currentMediaItem
+            if (currentMediaItem != null) {
+                val newMetadata = currentMediaItem.mediaMetadata.buildUpon()
+                    .setTitle(targetTitle)
+                    .setArtist(targetArtist)
+                    .build()
+                
+                val newMediaItem = currentMediaItem.buildUpon()
+                    .setMediaMetadata(newMetadata)
+                    .build()
+                
+                val currentIndex = player.currentMediaItemIndex
+                player.replaceMediaItem(currentIndex, newMediaItem)
+            }
+        } catch (e: Exception) {
+            Platform.logger.e("Audio", "更新动态歌词媒体元数据失败: ${e.message}")
+        }
+    }
+
     // 均衡器成员
     private var equalizer: android.media.audiofx.Equalizer? = null
     private var eqEnabled = false
@@ -444,6 +523,10 @@ object AndroidPlayerController : BasePlayerController() {
         }
     }
 
+    private fun getPrefs(): SharedPreferences? {
+        return appContext?.getSharedPreferences("2fmusic_prefs", Context.MODE_PRIVATE)
+    }
+
     override fun isEqualizerSupported(): Boolean {
         return equalizer != null
     }
@@ -454,6 +537,7 @@ object AndroidPlayerController : BasePlayerController() {
 
     override fun setEqualizerEnabled(enabled: Boolean) {
         eqEnabled = enabled
+        getPrefs()?.edit()?.putBoolean("eq_enabled", enabled)?.apply()
         try {
             equalizer?.enabled = enabled
         } catch (e: Exception) {
@@ -485,10 +569,26 @@ object AndroidPlayerController : BasePlayerController() {
 
     override fun setEqualizerBandLevel(band: Int, level: Int) {
         bandLevels[band] = level
+        getPrefs()?.edit()?.putInt("eq_band_$band", level)?.apply()
         try {
             equalizer?.setBandLevel(band.toShort(), level.toShort())
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+
+    override fun getEstimatedShutdownTime(minutes: Int): String {
+        if (minutes <= 0) return "请滑动轮盘设定定时时间"
+        return try {
+            val calendar = java.util.Calendar.getInstance()
+            calendar.add(java.util.Calendar.MINUTE, minutes)
+            val hour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
+            val minute = calendar.get(java.util.Calendar.MINUTE)
+            val hourStr = hour.toString().padStart(2, '0')
+            val minuteStr = minute.toString().padStart(2, '0')
+            "预计将在 $hourStr:$minuteStr 关闭播放 (${minutes} 分钟后)"
+        } catch (e: Exception) {
+            "${minutes} 分钟后关闭播放"
         }
     }
 }

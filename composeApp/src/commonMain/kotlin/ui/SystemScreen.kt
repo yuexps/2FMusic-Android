@@ -29,6 +29,7 @@ import top.yukonga.miuix.kmp.icon.extended.Hide
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Show
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 
 @Composable
 fun SystemScreen(modifier: Modifier = Modifier) {
@@ -40,24 +41,6 @@ fun SystemScreen(modifier: Modifier = Modifier) {
     var isInitialLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
-    var lyricsPref by remember { mutableStateOf("embedded") }
-    
-    val updateLyricsPref: (String) -> Unit = { newValue ->
-        coroutineScope.launch {
-            try {
-                val res = api.saveLyricsPreference(newValue)
-                if (res.success) {
-                    lyricsPref = newValue
-                    Platform.toast.show("歌词刮削偏好已更新为：${if (newValue == "embedded") "优先内嵌" else "优先网络"}")
-                } else {
-                    Platform.toast.show("更新偏好设置失败")
-                }
-            } catch (e: Exception) {
-                Platform.toast.show("更新出错")
-            }
-        }
-    }
-
     // 旋转动画 (使用 InfiniteTransition 确保循环)
     val infiniteTransition = rememberInfiniteTransition(label = "refresh_infinite")
     val rotation by infiniteTransition.animateFloat(
@@ -75,13 +58,6 @@ fun SystemScreen(modifier: Modifier = Modifier) {
             val result = api.getSystemStatus()
             status = result
             errorMessage = null
-            
-            try {
-                val prefRes = api.getLyricsPreference()
-                lyricsPref = prefRes.value
-            } catch (prefEx: Throwable) {
-                Platform.logger.e("SystemScreen", "无法获取歌词偏好", prefEx)
-            }
         } catch (e: Throwable) {
             status = null
             errorMessage = when {
@@ -233,83 +209,26 @@ fun SystemScreen(modifier: Modifier = Modifier) {
                 }
             }
 
-            SmallTitle(text = "歌词设置", modifier = Modifier.padding(start = 8.dp, top = 24.dp, bottom = 8.dp))
+            SmallTitle(text = "存储配置", modifier = Modifier.padding(start = 8.dp, top = 24.dp, bottom = 8.dp))
             
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("歌词刮削来源优先", fontSize = 16.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "优先从音频文件内嵌元数据提取，或是优先从网络聚合搜索获取。该设置将同步至后端服务器生效。",
-                        fontSize = 13.sp,
-                        color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
-                    
-                    Spacer(Modifier.height(16.dp))
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        val isEmbedded = lyricsPref == "embedded"
-                        
-                        // 优先内嵌
-                        Card(
-                            modifier = Modifier.weight(1f),
-                            onClick = {
-                                if (lyricsPref != "embedded") {
-                                    updateLyricsPref("embedded")
-                                }
-                            }
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(
-                                        if (isEmbedded) MiuixTheme.colorScheme.primary.copy(alpha = 0.15f)
-                                        else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.05f)
-                                    )
-                                    .padding(vertical = 12.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    "优先内嵌",
-                                    color = if (isEmbedded) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
-                                )
-                            }
-                        }
-                        
-                        // 优先网络
-                        Card(
-                            modifier = Modifier.weight(1f),
-                            onClick = {
-                                if (lyricsPref != "network") {
-                                    updateLyricsPref("network")
-                                }
-                            }
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(
-                                        if (!isEmbedded) MiuixTheme.colorScheme.primary.copy(alpha = 0.15f)
-                                        else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.05f)
-                                    )
-                                    .padding(vertical = 12.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    "优先网络",
-                                    color = if (!isEmbedded) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
-                                )
-                            }
-                        }
+                var storageType by remember { mutableStateOf(Platform.config.getStorageType()) }
+                val options = listOf("内部存储", "外部存储")
+                
+                OverlayDropdownPreference(
+                    title = "存储位置",
+                    summary = "缓存与下载的保存目录",
+                    items = options,
+                    selectedIndex = storageType,
+                    onSelectedIndexChange = { index ->
+                        storageType = index
+                        Platform.config.setStorageType(index)
                     }
-                }
+                )
             }
         }
     }

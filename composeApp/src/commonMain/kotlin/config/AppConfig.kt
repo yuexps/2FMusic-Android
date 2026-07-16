@@ -13,4 +13,9 @@ interface AppConfig {
     fun setLyricFontSize(size: Float) {}
     fun getLyricTranslationMode(): Int = 1 // 0: 隐藏, 1: 仅当前行, 2: 全局双语
     fun setLyricTranslationMode(mode: Int) {}
+    fun getShowLyricsInNotification(): Boolean = true
+    fun setShowLyricsInNotification(show: Boolean) {}
+    fun getStorageType(): Int = 0 // 0: 内部存储, 1: 外部存储
+    fun setStorageType(type: Int) {}
+    fun getStorageDirPath(): String = ""
 }
