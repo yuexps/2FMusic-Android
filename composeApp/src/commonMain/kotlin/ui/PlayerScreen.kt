@@ -1079,16 +1079,7 @@ fun PlayerScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
 
-                if (remainingSecondsState == null && estimatedMinutes > 0) {
-                    Text(
-                        text = timeEstimateText,
-                        fontSize = 13.sp,
-                        color = MiuixTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 16.dp),
-                        textAlign = TextAlign.Center
-                    )
-                } else {
+                if (remainingSecondsState != null) {
                     val seconds = remainingSecondsState!!
                     val min = seconds / 60
                     val sec = seconds % 60
@@ -1098,6 +1089,15 @@ fun PlayerScreen(
                         color = MiuixTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                } else if (estimatedMinutes > 0) {
+                    Text(
+                        text = timeEstimateText,
+                        fontSize = 13.sp,
+                        color = MiuixTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 16.dp),
+                        textAlign = TextAlign.Center
                     )
                 }
 
@@ -1153,17 +1153,17 @@ fun PlayerScreen(
                         onClick = {
                             showSleepTimerSettings = false
                             utils.SleepTimerManager.stopTimer()
-                            Platform.toast.show("已取消定时关闭")
+                            Platform.toast.show("已取消定时")
                             selectedTimerHour = 0
                             selectedTimerMinute = 0
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.wrapContentWidth(),
                         colors = ButtonDefaults.buttonColors(
                             color = Color.Red.copy(alpha = 0.1f),
                             contentColor = Color.Red
                         )
                     ) {
-                        Text("取消定时关闭", fontWeight = FontWeight.Bold)
+                        Text("取消定时", fontWeight = FontWeight.Bold)
                     }
                 }
 
