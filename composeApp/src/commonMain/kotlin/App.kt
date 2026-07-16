@@ -27,6 +27,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import utils.BackHandler
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -204,6 +206,7 @@ fun App(platform: PlatformDependencies) {
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 12.dp, vertical = 4.dp)
+                                    .clip(RoundedCornerShape(16.dp))
                                     .clickable {
                                         Platform.playerController.playAtIndex(index)
                                         GlobalState.togglePlaylist(false)

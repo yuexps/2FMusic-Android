@@ -366,7 +366,7 @@ fun MusicListScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(16.dp))
                             .clickable {
                                 activeMenuSong?.let { song ->
                                     scope.launch {
@@ -422,7 +422,7 @@ fun SongItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(16.dp))
             .clickable { onClick() }
     ) {
         Row(

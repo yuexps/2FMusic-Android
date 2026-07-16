@@ -44,6 +44,11 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 
 import top.yukonga.miuix.kmp.window.WindowListPopup
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
@@ -269,6 +274,9 @@ fun PlayerScreen(
                             LyricsView(
                                 lyrics = lyrics,
                                 currentPosition = currentPosition,
+                                onLineClick = { time ->
+                                    Platform.playerController.seekTo(time)
+                                },
                                 modifier = Modifier.fillMaxSize()
                             )
                         } else {
@@ -572,6 +580,7 @@ fun PlayerScreen(
 fun LyricsView(
     lyrics: List<LrcLine>,
     currentPosition: Long,
+    onLineClick: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val currentIndex = LrcParser.getCurrentLineIndex(lyrics, currentPosition)
@@ -615,6 +624,8 @@ fun LyricsView(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onLineClick(line.time) }
                         // 使用固定（最小）高度来防止 fontSize/scale 变化引起的布局回弹
                         .heightIn(min = 80.dp) 
                         .padding(vertical = 12.dp, horizontal = 32.dp) // 增加水平 padding 容纳缩放
@@ -627,29 +638,42 @@ fun LyricsView(
                     verticalArrangement = Arrangement.Center
                 ) {
                     line.lines.forEachIndexed { lineIndex, text ->
-                        // 颜色动画
-                        val textColor by animateColorAsState(
-                            targetValue = if (lineIndex == 0) {
-                                if (isActive) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantActions
-                            } else {
-                                if (isActive) MiuixTheme.colorScheme.onSurfaceVariantActions else MiuixTheme.colorScheme.onSurfaceVariantActions.copy(alpha = 0.6f)
-                            },
-                            animationSpec = tween(durationMillis = 400)
-                        )
+                        val content = @Composable {
+                            // 颜色动画
+                            val textColor by animateColorAsState(
+                                targetValue = if (lineIndex == 0) {
+                                    if (isActive) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantActions
+                                } else {
+                                    if (isActive) MiuixTheme.colorScheme.onSurfaceVariantActions else MiuixTheme.colorScheme.onSurfaceVariantActions.copy(alpha = 0.6f)
+                                },
+                                animationSpec = tween(durationMillis = 400)
+                            )
 
-                        Text(
-                            text = text,
-                            // 这里不再动 fontSize，而是靠 graphicsLayer 的 scale 缩放，
-                            // 这样就不会触发 Re-layout，从而彻底解决滚动抖动。
-                            fontSize = if (lineIndex == 0) 20.sp else 15.sp,
-                            fontWeight = if (isActive && lineIndex == 0) FontWeight.Bold else FontWeight.Normal,
-                            color = textColor,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        
-                        if (lineIndex < line.lines.size - 1) {
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = text,
+                                // 这里不再动 fontSize，而是靠 graphicsLayer 的 scale 缩放，
+                                // 这样就不会触发 Re-layout，从而彻底解决滚动抖动。
+                                fontSize = if (lineIndex == 0) 20.sp else 15.sp,
+                                fontWeight = if (isActive && lineIndex == 0) FontWeight.Bold else FontWeight.Normal,
+                                color = textColor,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        if (lineIndex == 0) {
+                            content()
+                        } else {
+                            AnimatedVisibility(
+                                visible = isActive,
+                                enter = fadeIn() + expandVertically(),
+                                exit = fadeOut() + shrinkVertically()
+                            ) {
+                                Column {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    content()
+                                }
+                            }
                         }
                     }
                 }
