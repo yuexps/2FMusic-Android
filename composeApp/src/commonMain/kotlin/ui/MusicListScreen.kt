@@ -56,9 +56,17 @@ fun MusicListScreen(
     var showSelectPlaylistDialog by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = isSearchExpanded) {
-        isSearchExpanded = false
-        searchQuery = ""
+    var isBatchMode by remember { mutableStateOf(false) }
+    var selectedSongIds by remember { mutableStateOf(emptySet<String>()) }
+
+    BackHandler(enabled = isSearchExpanded || isBatchMode) {
+        if (isSearchExpanded) {
+            isSearchExpanded = false
+            searchQuery = ""
+        } else if (isBatchMode) {
+            isBatchMode = false
+            selectedSongIds = emptySet()
+        }
     }
 
     val filteredSongs = remember(songs, searchQuery) {
@@ -110,6 +118,98 @@ fun MusicListScreen(
                 scrollBehavior = scrollBehavior
             )
         },
+        floatingToolbar = {
+            if (isBatchMode) {
+                FloatingToolbar(
+                    cornerRadius = 16.dp
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+                    ) {
+                        // 1. 批量收藏图标按钮
+                        IconButton(
+                            onClick = {
+                                if (selectedSongIds.isEmpty()) {
+                                    Platform.toast.show("请先选择歌曲")
+                                } else {
+                                    activeMenuSong = null
+                                    showSelectPlaylistDialog = true
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = MiuixIcons.Favorites,
+                                contentDescription = "Batch Favorite",
+                                tint = MiuixTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        // 2. 批量下载图标按钮
+                        IconButton(
+                            onClick = {
+                                if (selectedSongIds.isEmpty()) {
+                                    Platform.toast.show("请先选择歌曲")
+                                } else {
+                                    scope.launch {
+                                        Platform.toast.show("已加入后台批量下载: ${selectedSongIds.size} 首歌曲")
+                                        songs.filter { selectedSongIds.contains(it.id) }.forEach { song ->
+                                            repository.downloadMusic(song)
+                                        }
+                                        isBatchMode = false
+                                        selectedSongIds = emptySet()
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = MiuixIcons.Download,
+                                contentDescription = "Batch Download",
+                                tint = MiuixTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        // 3. 批量删除图标按钮
+                        IconButton(
+                            onClick = {
+                                if (selectedSongIds.isEmpty()) {
+                                    Platform.toast.show("请先选择歌曲")
+                                } else {
+                                    activeMenuSong = null
+                                    showDeleteConfirmDialog = true
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = MiuixIcons.Delete,
+                                contentDescription = "Batch Delete",
+                                tint = Color.Red.copy(alpha = 0.8f),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        // 4. 退出批量管理图标按钮 (用 Close 图标)
+                        IconButton(
+                            onClick = {
+                                isBatchMode = false
+                                selectedSongIds = emptySet()
+                            }
+                        ) {
+                            Icon(
+                                imageVector = MiuixIcons.Close,
+                                contentDescription = "Exit Batch",
+                                tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        floatingToolbarPosition = ToolbarPosition.BottomEnd,
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
         Box(Modifier.fillMaxSize().padding(innerPadding)) {
@@ -178,33 +278,47 @@ fun MusicListScreen(
                                         SongItem(
                                             song = song,
                                             currentSong = currentSong,
+                                            isBatchMode = isBatchMode,
+                                            isSelected = selectedSongIds.contains(song.id),
+                                            onSelectedChange = { checked ->
+                                                selectedSongIds = if (checked) selectedSongIds + song.id else selectedSongIds - song.id
+                                            },
                                             onClick = {
                                                 if (Platform.playerController.playlist.value != filteredSongs) {
                                                     Platform.playerController.setPlaylist(filteredSongs)
                                                 }
                                                 Platform.playerController.play(song)
                                             },
+                                            onPlayClick = {
+                                                if (Platform.playerController.playlist.value != filteredSongs) {
+                                                    Platform.playerController.setPlaylist(filteredSongs)
+                                                }
+                                                Platform.playerController.play(song)
+                                            },
+                                            onAddToQueueClick = {
+                                                val currentPlaylist = Platform.playerController.playlist.value.toMutableList()
+                                                if (!currentPlaylist.any { it.id == song.id }) {
+                                                    currentPlaylist.add(song)
+                                                    Platform.playerController.setPlaylist(currentPlaylist)
+                                                    Platform.toast.show("已添加至队列")
+                                                } else {
+                                                    Platform.toast.show("歌曲已在队列中")
+                                                }
+                                            },
                                             onAddToPlaylistClick = {
                                                 activeMenuSong = song
                                                 showSelectPlaylistDialog = true
                                             },
-                                            onDownloadClick = {
-                                                activeMenuSong = song
-                                                scope.launch {
-                                                    Platform.toast.show("开始下载: ${song.title}")
-                                                    val result = repository.downloadMusic(song)
-                                                    when (result) {
-                                                        DownloadResult.STARTED -> { /* Toast already shown */ }
-                                                        DownloadResult.EXISTS -> Platform.toast.show("已存在，无需下载")
-                                                        DownloadResult.ERROR -> Platform.toast.show("下载启动失败")
-                                                    }
-                                                }
-                                            },
-                                            onDeleteClick = {
-                                                activeMenuSong = song
-                                                showDeleteConfirmDialog = true
+                                            onBatchManageClick = {
+                                                isBatchMode = true
+                                                selectedSongIds = setOf(song.id)
                                             }
                                         )
+                                    }
+                                    if (isBatchMode) {
+                                        item {
+                                            Spacer(Modifier.height(88.dp))
+                                        }
                                     }
                                 }
                             }
@@ -212,7 +326,6 @@ fun MusicListScreen(
                     }
                 }
 
-                // 主内容区域
                 when {
                     songs.isEmpty() -> {
                         when {
@@ -267,45 +380,59 @@ fun MusicListScreen(
                                 SongItem(
                                     song = song,
                                     currentSong = currentSong,
+                                    isBatchMode = isBatchMode,
+                                    isSelected = selectedSongIds.contains(song.id),
+                                    onSelectedChange = { checked ->
+                                        selectedSongIds = if (checked) selectedSongIds + song.id else selectedSongIds - song.id
+                                    },
                                     onClick = {
                                         if (Platform.playerController.playlist.value != songs) {
                                             Platform.playerController.setPlaylist(songs)
                                         }
                                         Platform.playerController.play(song)
                                     },
+                                    onPlayClick = {
+                                        if (Platform.playerController.playlist.value != songs) {
+                                            Platform.playerController.setPlaylist(songs)
+                                        }
+                                        Platform.playerController.play(song)
+                                    },
+                                    onAddToQueueClick = {
+                                        val currentPlaylist = Platform.playerController.playlist.value.toMutableList()
+                                        if (!currentPlaylist.any { it.id == song.id }) {
+                                            currentPlaylist.add(song)
+                                            Platform.playerController.setPlaylist(currentPlaylist)
+                                            Platform.toast.show("已添加至队列")
+                                        } else {
+                                            Platform.toast.show("歌曲已在队列中")
+                                        }
+                                    },
                                     onAddToPlaylistClick = {
                                         activeMenuSong = song
                                         showSelectPlaylistDialog = true
                                     },
-                                    onDownloadClick = {
-                                        activeMenuSong = song
-                                        scope.launch {
-                                            Platform.toast.show("开始下载: ${song.title}")
-                                            val result = repository.downloadMusic(song)
-                                            when (result) {
-                                                DownloadResult.STARTED -> { /* Toast already shown */ }
-                                                DownloadResult.EXISTS -> Platform.toast.show("已存在，无需下载")
-                                                DownloadResult.ERROR -> Platform.toast.show("下载启动失败")
-                                            }
-                                        }
-                                    },
-                                    onDeleteClick = {
-                                        activeMenuSong = song
-                                        showDeleteConfirmDialog = true
+                                    onBatchManageClick = {
+                                        isBatchMode = true
+                                        selectedSongIds = setOf(song.id)
                                     }
                                 )
+                            }
+                            if (isBatchMode) {
+                                item {
+                                    Spacer(Modifier.height(88.dp))
+                                }
                             }
                         }
                     }
                 }
             }
+
         }
     }
 
-    // --- 4. 彻底物理删除警示框 ---
     WindowDialog(
         title = "确认物理删除",
-        summary = "确定要从服务端磁盘彻底物理删除歌曲「${activeMenuSong?.filename ?: ""}」吗？这将抹除其所有的数据库索引及附属的封面歌词缓存，且不可撤销！",
+        summary = if (isBatchMode) "确定要从服务端磁盘彻底物理删除选中的 ${selectedSongIds.size} 首歌曲吗？这将抹除其所有的数据库索引及附属的本地缓存，且不可撤销！" else "确定要从服务端磁盘彻底物理删除歌曲「${activeMenuSong?.filename ?: ""}」吗？这将抹除其所有的数据库索引及附属的封面歌词缓存，且不可撤销！",
         show = showDeleteConfirmDialog,
         onDismissRequest = { showDeleteConfirmDialog = false }
     ) {
@@ -322,21 +449,43 @@ fun MusicListScreen(
             TextButton(
                 text = "确认",
                 onClick = {
-                    activeMenuSong?.let { song ->
+                    if (isBatchMode) {
                         scope.launch {
                             try {
-                                val res = api.deleteFile(song.id)
-                                if (res.success) {
-                                    repository.deleteLocalAudio(song.id)
-                                    GlobalState.triggerRefresh()
-                                    Platform.toast.show("删除成功：${song.title}")
-                                } else {
-                                    Platform.toast.show("删除失败")
+                                var successCount = 0
+                                songs.filter { selectedSongIds.contains(it.id) }.forEach { song ->
+                                    val res = api.deleteFile(song.id)
+                                    if (res.success) {
+                                        repository.deleteLocalAudio(song.id)
+                                        successCount++
+                                    }
                                 }
+                                GlobalState.triggerRefresh()
+                                Platform.toast.show("成功批量删除 ${successCount} 首歌曲")
                             } catch (e: Exception) {
-                                Platform.toast.show("删除出错")
+                                Platform.toast.show("批量删除发生错误")
                             }
+                            isBatchMode = false
+                            selectedSongIds = emptySet()
                             showDeleteConfirmDialog = false
+                        }
+                    } else {
+                        activeMenuSong?.let { song ->
+                            scope.launch {
+                                try {
+                                    val res = api.deleteFile(song.id)
+                                    if (res.success) {
+                                        repository.deleteLocalAudio(song.id)
+                                        GlobalState.triggerRefresh()
+                                        Platform.toast.show("删除成功：${song.title}")
+                                    } else {
+                                        Platform.toast.show("删除失败")
+                                    }
+                                } catch (e: Exception) {
+                                    Platform.toast.show("删除出错")
+                                }
+                                showDeleteConfirmDialog = false
+                            }
                         }
                     }
                 },
@@ -346,7 +495,6 @@ fun MusicListScreen(
         }
     }
 
-    // --- 5. 选择歌单对话框 ---
     WindowDialog(
         title = "添加音乐至",
         show = showSelectPlaylistDialog,
@@ -368,15 +516,33 @@ fun MusicListScreen(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(16.dp))
                             .clickable {
-                                activeMenuSong?.let { song ->
+                                if (isBatchMode) {
                                     scope.launch {
                                         try {
-                                            repository.addSongToPlaylist(song.id, playlist.id)
-                                            Platform.toast.show("已成功添加至「${playlist.name}」")
+                                            var successCount = 0
+                                            selectedSongIds.forEach { songId ->
+                                                repository.addSongToPlaylist(songId, playlist.id)
+                                                successCount++
+                                            }
+                                            Platform.toast.show("已成功将 ${successCount} 首音乐添加至「${playlist.name}」")
                                         } catch (e: Exception) {
-                                            Platform.toast.show("添加失败")
+                                            Platform.toast.show("批量添加失败")
                                         }
+                                        isBatchMode = false
+                                        selectedSongIds = emptySet()
                                         showSelectPlaylistDialog = false
+                                    }
+                                } else {
+                                    activeMenuSong?.let { song ->
+                                        scope.launch {
+                                            try {
+                                                repository.addSongToPlaylist(song.id, playlist.id)
+                                                Platform.toast.show("已成功添加至「${playlist.name}」")
+                                            } catch (e: Exception) {
+                                                Platform.toast.show("添加失败")
+                                            }
+                                            showSelectPlaylistDialog = false
+                                        }
                                     }
                                 }
                             }
@@ -412,10 +578,14 @@ fun MusicListScreen(
 fun SongItem(
     song: Song,
     currentSong: Song?,
+    isBatchMode: Boolean,
+    isSelected: Boolean,
+    onSelectedChange: (Boolean) -> Unit,
     onClick: () -> Unit,
+    onPlayClick: () -> Unit,
+    onAddToQueueClick: () -> Unit,
     onAddToPlaylistClick: () -> Unit,
-    onDownloadClick: () -> Unit,
-    onDeleteClick: () -> Unit
+    onBatchManageClick: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
@@ -423,12 +593,26 @@ fun SongItem(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .clickable { onClick() }
+            .clickable {
+                if (isBatchMode) {
+                    onSelectedChange(!isSelected)
+                } else {
+                    onClick()
+                }
+            }
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
         ) {
+            if (isBatchMode) {
+                Checkbox(
+                    state = androidx.compose.ui.state.ToggleableState(isSelected),
+                    onClick = { onSelectedChange(!isSelected) },
+                    modifier = Modifier.padding(end = 12.dp)
+                )
+            }
+
             // 封面加载逻辑：优先本地缓存 -> 远程服务器
             val albumArtUrl = utils.CoverUtil.getCoverUrl(song)
 
@@ -472,52 +656,63 @@ fun SongItem(
                     )
                 )
             }
+            if (!isBatchMode) {
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(
+                            imageVector = MiuixIcons.More,
+                            contentDescription = "操作",
+                            tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                        )
+                    }
 
-            Box {
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(
-                        imageVector = MiuixIcons.More,
-                        contentDescription = "操作",
-                        tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                    )
-                }
-
-                WindowListPopup(
-                    show = showMenu,
-                    alignment = PopupPositionProvider.Align.End,
-                    onDismissRequest = { showMenu = false }
-                ) {
-                    ListPopupColumn {
-                        DropdownImpl(
-                            text = "添加到收藏夹/歌单",
-                            optionSize = 3,
-                            isSelected = false,
-                            onSelectedIndexChange = {
-                                showMenu = false
-                                onAddToPlaylistClick()
-                            },
-                            index = 0
-                        )
-                        DropdownImpl(
-                            text = "下载到本地",
-                            optionSize = 3,
-                            isSelected = false,
-                            onSelectedIndexChange = {
-                                showMenu = false
-                                onDownloadClick()
-                            },
-                            index = 1
-                        )
-                        DropdownImpl(
-                            text = "物理删除歌曲",
-                            optionSize = 3,
-                            isSelected = false,
-                            onSelectedIndexChange = {
-                                showMenu = false
-                                onDeleteClick()
-                            },
-                            index = 2
-                        )
+                    WindowListPopup(
+                        show = showMenu,
+                        alignment = PopupPositionProvider.Align.End,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        ListPopupColumn {
+                            DropdownImpl(
+                                text = "播放",
+                                optionSize = 4,
+                                isSelected = false,
+                                onSelectedIndexChange = {
+                                    showMenu = false
+                                    onPlayClick()
+                                },
+                                index = 0
+                            )
+                            DropdownImpl(
+                                text = "添加至队列",
+                                optionSize = 4,
+                                isSelected = false,
+                                onSelectedIndexChange = {
+                                    showMenu = false
+                                    onAddToQueueClick()
+                                },
+                                index = 1
+                            )
+                            DropdownImpl(
+                                text = "添加到收藏夹",
+                                optionSize = 4,
+                                isSelected = false,
+                                onSelectedIndexChange = {
+                                    showMenu = false
+                                    onAddToPlaylistClick()
+                                },
+                                index = 2
+                            )
+                            DropdownImpl(
+                                text = "批量管理",
+                                optionSize = 4,
+                                isSelected = false,
+                                onSelectedIndexChange = {
+                                    showMenu = false
+                                    onBatchManageClick()
+                                },
+                                index = 3
+                            )
+                        }
                     }
                 }
             }

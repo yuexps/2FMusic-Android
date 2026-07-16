@@ -63,11 +63,18 @@ fun PlaylistScreen(
 
     var activeMenuSong by remember { mutableStateOf<Song?>(null) }
     var showSelectPlaylistDialog by remember { mutableStateOf(false) }
-    var selectPlaylistMode by remember { mutableStateOf("") } // "add" | "move"
+    var selectPlaylistMode by remember { mutableStateOf("") } // "add" | "move" | "batch_move"
+    var isBatchMode by remember { mutableStateOf(false) }
+    var selectedSongIds by remember { mutableStateOf(emptySet<String>()) }
     
     // 适配安卓返回键
-    BackHandler(enabled = selectedPlaylist != null) {
-        selectedPlaylist = null
+    BackHandler(enabled = selectedPlaylist != null || isBatchMode) {
+        if (isBatchMode) {
+            isBatchMode = false
+            selectedSongIds = emptySet()
+        } else {
+            selectedPlaylist = null
+        }
     }
 
     // 处理进入歌单详情
@@ -113,6 +120,87 @@ fun PlaylistScreen(
                 }
             )
         },
+        floatingToolbar = {
+            if (selectedPlaylist != null && isBatchMode) {
+                FloatingToolbar(
+                    cornerRadius = 16.dp
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // 1. 批量从当前歌单移出
+                        IconButton(
+                            onClick = {
+                                if (selectedSongIds.isEmpty()) {
+                                    Platform.toast.show("请先选择歌曲")
+                                } else {
+                                    selectedPlaylist?.let { playlist ->
+                                        coroutineScope.launch {
+                                            try {
+                                                var count = 0
+                                                selectedSongIds.forEach { songId ->
+                                                    repository.removeSongFromPlaylist(songId, playlist.id)
+                                                    count++
+                                                }
+                                                Platform.toast.show("成功批量移出 ${count} 首歌曲")
+                                            } catch (e: Exception) {
+                                                Platform.toast.show("批量移出失败")
+                                            }
+                                            isBatchMode = false
+                                            selectedSongIds = emptySet()
+                                        }
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = MiuixIcons.Delete,
+                                contentDescription = "Batch Remove",
+                                tint = Color.Red.copy(alpha = 0.8f),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        // 2. 批量移动至其他歌单
+                        IconButton(
+                            onClick = {
+                                if (selectedSongIds.isEmpty()) {
+                                    Platform.toast.show("请先选择歌曲")
+                                } else {
+                                    selectPlaylistMode = "batch_move"
+                                    showSelectPlaylistDialog = true
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = MiuixIcons.Favorites,
+                                contentDescription = "Batch Move",
+                                tint = MiuixTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        // 3. 退出多选 (叉号 Close)
+                        IconButton(
+                            onClick = {
+                                isBatchMode = false
+                                selectedSongIds = emptySet()
+                            }
+                        ) {
+                            Icon(
+                                imageVector = MiuixIcons.Close,
+                                contentDescription = "Exit Batch",
+                                tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        floatingToolbarPosition = ToolbarPosition.BottomEnd,
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
         Box(Modifier.fillMaxSize().padding(innerPadding)) {
@@ -206,6 +294,11 @@ fun PlaylistScreen(
                         items(playlistSongs) { song ->
                             SongItem(
                                 song = song,
+                                isBatchMode = isBatchMode,
+                                isSelected = selectedSongIds.contains(song.id),
+                                onSelectedChange = { checked ->
+                                    selectedSongIds = if (checked) selectedSongIds + song.id else selectedSongIds - song.id
+                                },
                                 onClick = {
                                     if (Platform.playerController.playlist.value != playlistSongs) {
                                         Platform.playerController.setPlaylist(playlistSongs)
@@ -234,8 +327,17 @@ fun PlaylistScreen(
                                     activeMenuSong = song
                                     selectPlaylistMode = "move"
                                     showSelectPlaylistDialog = true
+                                },
+                                onBatchManageClick = {
+                                    isBatchMode = true
+                                    selectedSongIds = setOf(song.id)
                                 }
                             )
+                        }
+                        if (isBatchMode) {
+                            item {
+                                Spacer(Modifier.height(88.dp))
+                            }
                         }
                     }
                 }
@@ -353,21 +455,29 @@ fun PlaylistScreen(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(16.dp))
                             .clickable {
-                                activeMenuSong?.let { song ->
-                                    coroutineScope.launch {
-                                        try {
-                                            if (selectPlaylistMode == "move" && selectedPlaylist != null) {
+                                coroutineScope.launch {
+                                    try {
+                                        if (selectPlaylistMode == "batch_move" && selectedPlaylist != null) {
+                                            val ids = selectedSongIds.toList()
+                                            repository.batchMoveSongs(ids, selectedPlaylist!!.id, playlist.id)
+                                            Platform.toast.show("成功批量转移 ${ids.size} 首歌曲")
+                                            isBatchMode = false
+                                            selectedSongIds = emptySet()
+                                        } else if (selectPlaylistMode == "move" && selectedPlaylist != null) {
+                                            activeMenuSong?.let { song ->
                                                 repository.batchMoveSongs(listOf(song.id), selectedPlaylist!!.id, playlist.id)
                                                 Platform.toast.show("转移成功")
-                                            } else {
+                                            }
+                                        } else {
+                                            activeMenuSong?.let { song ->
                                                 repository.addSongToPlaylist(song.id, playlist.id)
                                                 Platform.toast.show("添加成功")
                                             }
-                                        } catch (e: Exception) {
-                                            Platform.toast.show("操作失败")
                                         }
-                                        showSelectPlaylistDialog = false
+                                    } catch (e: Exception) {
+                                        Platform.toast.show("操作失败")
                                     }
+                                    showSelectPlaylistDialog = false
                                 }
                             }
                     ) {
@@ -401,11 +511,15 @@ fun PlaylistScreen(
 @Composable
 fun SongItem(
     song: Song,
+    isBatchMode: Boolean,
+    isSelected: Boolean,
+    onSelectedChange: (Boolean) -> Unit,
     onClick: () -> Unit,
     showRemoveOption: Boolean = false,
     onRemoveClick: () -> Unit = {},
     onAddToOtherClick: () -> Unit = {},
-    onMoveToOtherClick: () -> Unit = {}
+    onMoveToOtherClick: () -> Unit = {},
+    onBatchManageClick: () -> Unit = {}
 ) {
     val currentSong by Platform.playerController.currentSong.collectAsState()
     val isPlaying = currentSong?.id == song.id
@@ -415,12 +529,26 @@ fun SongItem(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .clickable { onClick() }
+            .clickable {
+                if (isBatchMode) {
+                    onSelectedChange(!isSelected)
+                } else {
+                    onClick()
+                }
+            }
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (isBatchMode) {
+                Checkbox(
+                    state = androidx.compose.ui.state.ToggleableState(isSelected),
+                    onClick = { onSelectedChange(!isSelected) },
+                    modifier = Modifier.padding(end = 12.dp)
+                )
+            }
+
             val albumArtUrl = utils.CoverUtil.getCoverUrl(song)
             
             if (albumArtUrl != null) {
@@ -460,45 +588,49 @@ fun SongItem(
                 )
             }
 
-            Box {
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(
-                        imageVector = MiuixIcons.More,
-                        contentDescription = "操作",
-                        tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                    )
-                }
-                
-                WindowListPopup(
-                    show = showMenu,
-                    alignment = PopupPositionProvider.Align.End,
-                    onDismissRequest = { showMenu = false }
-                ) {
-                    ListPopupColumn {
-                        val options = mutableListOf<String>()
-                        if (showRemoveOption) {
-                            options.add("从当前歌单移出")
-                        }
-                        options.add("添加到其它歌单")
-                        if (showRemoveOption) {
-                            options.add("移动至其它歌单")
-                        }
-                        
-                        options.forEachIndexed { index, text ->
-                            DropdownImpl(
-                                text = text,
-                                optionSize = options.size,
-                                isSelected = false,
-                                onSelectedIndexChange = {
-                                    showMenu = false
-                                    when (text) {
-                                        "从当前歌单移出" -> onRemoveClick()
-                                        "添加到其它歌单" -> onAddToOtherClick()
-                                        "移动至其它歌单" -> onMoveToOtherClick()
-                                    }
-                                },
-                                index = index
-                            )
+            if (!isBatchMode) {
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(
+                            imageVector = MiuixIcons.More,
+                            contentDescription = "操作",
+                            tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                        )
+                    }
+                    
+                    WindowListPopup(
+                        show = showMenu,
+                        alignment = PopupPositionProvider.Align.End,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        ListPopupColumn {
+                            val options = mutableListOf<String>()
+                            if (showRemoveOption) {
+                                options.add("从当前歌单移出")
+                            }
+                            options.add("添加到其它歌单")
+                            if (showRemoveOption) {
+                                options.add("移动至其它歌单")
+                            }
+                            options.add("批量管理")
+                            
+                            options.forEachIndexed { index, text ->
+                                DropdownImpl(
+                                    text = text,
+                                    optionSize = options.size,
+                                    isSelected = false,
+                                    onSelectedIndexChange = {
+                                        showMenu = false
+                                        when (text) {
+                                            "从当前歌单移出" -> onRemoveClick()
+                                            "添加到其它歌单" -> onAddToOtherClick()
+                                            "移动至其它歌单" -> onMoveToOtherClick()
+                                            "批量管理" -> onBatchManageClick()
+                                        }
+                                    },
+                                    index = index
+                                )
+                            }
                         }
                     }
                 }

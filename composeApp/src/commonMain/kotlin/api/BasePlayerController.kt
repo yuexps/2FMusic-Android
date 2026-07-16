@@ -14,4 +14,11 @@ abstract class BasePlayerController : PlayerController {
     override val currentPosition = MutableStateFlow(0L)
     override val playlist = MutableStateFlow<List<Song>>(emptyList())
     override val currentIndex = MutableStateFlow(-1)
+
+    override fun isEqualizerSupported(): Boolean = false
+    override fun isEqualizerEnabled(): Boolean = false
+    override fun setEqualizerEnabled(enabled: Boolean) {}
+    override fun getEqualizerBands(): List<String> = emptyList()
+    override fun getEqualizerBandLevels(): List<Int> = emptyList()
+    override fun setEqualizerBandLevel(band: Int, level: Int) {}
 }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,12 +30,16 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.*
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
+import top.yukonga.miuix.kmp.window.WindowBottomSheet
+import top.yukonga.miuix.kmp.menu.WindowIconCascadingDropdownMenu
 import utils.LrcLine
 import utils.LrcParser
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.platform.LocalDensity
@@ -43,17 +48,24 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
-
-import top.yukonga.miuix.kmp.window.WindowListPopup
-import top.yukonga.miuix.kmp.basic.ListPopupColumn
-import top.yukonga.miuix.kmp.basic.DropdownImpl
-import top.yukonga.miuix.kmp.basic.PopupPositionProvider
+import androidx.compose.animation.core.FastOutSlowInEasing
 import utils.Platform
 
 import data.MusicRepository
@@ -85,6 +97,21 @@ fun PlayerScreen(
     val density = LocalDensity.current
     val dismissThreshold = with(density) { 150.dp.toPx() }
     val showDeleteDialog = remember { mutableStateOf(false) }
+    val showDetailsDialog = remember { mutableStateOf(false) }
+    var lyricFontSize by remember { mutableFloatStateOf(Platform.config.getLyricFontSize()) }
+    var lyricTranslationMode by remember { mutableIntStateOf(Platform.config.getLyricTranslationMode()) }
+    var showSongActions by remember { mutableStateOf(false) }
+    val remainingSecondsState by utils.SleepTimerManager.remainingSeconds.collectAsState()
+    var showSleepTimerSettings by remember { mutableStateOf(false) }
+    var showEqualizerSettings by remember { mutableStateOf(false) }
+    
+    val localSongs by repository.getLocalSongs().collectAsState(initial = emptyList())
+    val downloadedSongIds = remember(localSongs) {
+        localSongs.filter { it.localAudioPath != null }.map { it.id }.toSet()
+    }
+    val isDownloaded = currentSong?.let { downloadedSongIds.contains(it.id) } ?: false
+    val playlists by repository.getAllPlaylists().collectAsState(initial = emptyList())
+    val showSelectPlaylistDialog = remember { mutableStateOf(false) }
 
     // 当歌曲改变时加载歌词与封面持久化
     LaunchedEffect(currentSong) {
@@ -142,75 +169,8 @@ fun PlayerScreen(
                 .statusBarsPadding()
                 .padding(horizontal = 24.dp)
         ) {
-            // 顶部栏: 使用 Miuix TopAppBar
-            // 顶部栏: 自定义 Row 以消除多余间距
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp), //微调上下边距，保持视觉舒适但紧凑
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // 关闭按钮
-                IconButton(onClick = onClose) {
-                    Icon(imageVector = MiuixIcons.ExpandLess, contentDescription = "Close")
-                }
-
-                // 更多菜单
-                val showMenu = remember { mutableStateOf(false) }
-                
-                Box {
-                    IconButton(onClick = { showMenu.value = true }) {
-                        Icon(imageVector = MiuixIcons.More, contentDescription = "更多")
-                    }
-                    
-                    WindowListPopup(
-                        show = showMenu.value,
-                        alignment = PopupPositionProvider.Align.End, // 靠右对齐
-                        onDismissRequest = { showMenu.value = false }
-                    ) {
-                        ListPopupColumn {
-                                DropdownImpl(
-                                    text = "下载到本地",
-                                    optionSize = 2,
-                                    isSelected = false,
-                                    onSelectedIndexChange = {
-                                        showMenu.value = false
-                                        currentSong?.let { song ->
-                                            Platform.toast.show("开始下载: ${song.title}")
-                                            Platform.logger.i("PlayerScreen", "开始下载: ${song.title}")
-                                            val result = repository.downloadMusic(song)
-                                            when (result) {
-                                                DownloadResult.STARTED -> { /* Toast already shown */ }
-                                                DownloadResult.EXISTS -> Platform.toast.show("已存在，无需下载")
-                                                DownloadResult.ERROR -> Platform.toast.show("下载启动失败")
-
-                                            }
-                                        }
-                                    },
-                                    index = 0
-                                )
-                                DropdownImpl(
-                                    text = "删除此音乐",
-                                    optionSize = 2,
-                                    isSelected = false,
-                                    onSelectedIndexChange = { 
-                                        showMenu.value = false
-                                        showDeleteDialog.value = true
-                                    },
-                                    index = 1
-                                )
-                        }
-                    }
-                }
-            }
-
-
-
-            Spacer(Modifier.height(8.dp))
-
-            // Tab 切换
-            val tabs = listOf("封面", "歌词")
+            // 顶部栏: 整合 Tab 与折叠、设置按钮
+            val tabs = listOf("歌曲", "歌词")
             val pagerState = rememberPagerState { tabs.size }
             var selectedTabIndex by remember { mutableIntStateOf(0) }
 
@@ -221,12 +181,121 @@ fun PlayerScreen(
                 pagerState.animateScrollToPage(selectedTabIndex)
             }
 
-            TabRow(
-                tabs = tabs,
-                selectedTabIndex = selectedTabIndex,
-                onTabSelected = { selectedTabIndex = it },
-                modifier = Modifier.fillMaxWidth()
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 收起按钮
+                IconButton(onClick = onClose) {
+                    Icon(
+                        imageVector = MiuixIcons.ExpandLess,
+                        contentDescription = "Close",
+                        modifier = Modifier.graphicsLayer { rotationZ = 180f }
+                    )
+                }
+
+                // 中间 Tab 切换 (歌曲 | 歌词)
+                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(20.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        tabs.forEachIndexed { index, title ->
+                            val isSelected = selectedTabIndex == index
+                            Text(
+                                text = title,
+                                fontSize = 16.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) MiuixTheme.colorScheme.onSurface else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                                modifier = Modifier
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        selectedTabIndex = index
+                                    }
+                            )
+                        }
+                    }
+                }
+
+                // 级联设置下拉菜单
+                val settingsEntry = DropdownEntry(
+                    items = listOf(
+                        DropdownItem(
+                            text = "歌词大小",
+                            children = listOf(
+                                DropdownItem(
+                                    text = "小 (18 sp)",
+                                    selected = lyricFontSize == 18f,
+                                    onClick = {
+                                        lyricFontSize = 18f
+                                        Platform.config.setLyricFontSize(18f)
+                                    }
+                                ),
+                                DropdownItem(
+                                    text = "中 (22 sp)",
+                                    selected = lyricFontSize == 22f,
+                                    onClick = {
+                                        lyricFontSize = 22f
+                                        Platform.config.setLyricFontSize(22f)
+                                    }
+                                ),
+                                DropdownItem(
+                                    text = "大 (26 sp)",
+                                    selected = lyricFontSize == 26f,
+                                    onClick = {
+                                        lyricFontSize = 26f
+                                        Platform.config.setLyricFontSize(26f)
+                                    }
+                                )
+                            )
+                        ),
+                        DropdownItem(
+                            text = "歌词翻译",
+                            children = listOf(
+                                DropdownItem(
+                                    text = "隐藏翻译",
+                                    selected = lyricTranslationMode == 0,
+                                    onClick = {
+                                        lyricTranslationMode = 0
+                                        Platform.config.setLyricTranslationMode(0)
+                                    }
+                                ),
+                                DropdownItem(
+                                    text = "仅当前行",
+                                    selected = lyricTranslationMode == 1,
+                                    onClick = {
+                                        lyricTranslationMode = 1
+                                        Platform.config.setLyricTranslationMode(1)
+                                    }
+                                ),
+                                DropdownItem(
+                                    text = "全局双语",
+                                    selected = lyricTranslationMode == 2,
+                                    onClick = {
+                                        lyricTranslationMode = 2
+                                        Platform.config.setLyricTranslationMode(2)
+                                    }
+                                )
+                            )
+                        )
+                    )
+                )
+
+                WindowIconCascadingDropdownMenu(
+                    entry = settingsEntry
+                ) {
+                    Icon(
+                        imageVector = MiuixIcons.Settings,
+                        contentDescription = "设置",
+                        tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                    )
+                }
+            }
 
             Spacer(Modifier.height(16.dp))
 
@@ -239,7 +308,7 @@ fun PlayerScreen(
             ) { page ->
                 when (page) {
                     0 -> {
-                        // 封面页面
+                        // 歌曲封面页面
                         Column(
                             modifier = Modifier.fillMaxSize(),
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -250,11 +319,11 @@ fun PlayerScreen(
                             Box(
                                 modifier = Modifier
                                     .padding(vertical = 16.dp)
-                                    .sizeIn(maxWidth = 400.dp, maxHeight = 400.dp)
-                                    .fillMaxWidth(0.8f) // 移动端依然占 80%
+                                    .sizeIn(maxWidth = 360.dp, maxHeight = 360.dp)
+                                    .fillMaxWidth(0.85f)
                                     .aspectRatio(1f)
-                                    .clip(RoundedCornerShape(24.dp))
-                                    .shadow(elevation = 16.dp)
+                                    .clip(RoundedCornerShape(28.dp))
+                                    .shadow(elevation = 12.dp)
                                     .background(MiuixTheme.colorScheme.secondaryContainer)
                             ) {
                                 if (albumArtUrl != null) {
@@ -274,6 +343,9 @@ fun PlayerScreen(
                             LyricsView(
                                 lyrics = lyrics,
                                 currentPosition = currentPosition,
+                                fontSizeSp = lyricFontSize,
+                                translationMode = lyricTranslationMode,
+                                currentSong = currentSong,
                                 onLineClick = { time ->
                                     Platform.playerController.seekTo(time)
                                 },
@@ -294,34 +366,36 @@ fun PlayerScreen(
                 }
             }
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(24.dp))
 
-            // 歌曲信息 - 仅在封面页显示
+            // 控制器区域 - 仅在“歌曲”主页显示
             if (selectedTabIndex == 0) {
+                // 1. 歌曲标题/歌手 (左对齐) + 红心收藏
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        androidx.compose.foundation.text.BasicText(
+                        Text(
                             text = currentSong?.title ?: currentSong?.filename ?: "未知音乐",
-                            style = androidx.compose.ui.text.TextStyle(
-                                fontSize = 26.sp,
-                                fontWeight = FontWeight.Black,
-                                color = MiuixTheme.colorScheme.onSurface
-                            ),
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MiuixTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = currentSong?.artist ?: "未知艺术家",
-                            fontSize = 18.sp,
-                            color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            maxLines = 1
+                            text = currentSong?.artist ?: "未知歌手",
+                            fontSize = 14.sp,
+                            color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     }
 
+                    // 红心收藏
                     IconButton(onClick = {
                         currentSong?.let { song ->
                             scope.launch {
@@ -340,30 +414,81 @@ fun PlayerScreen(
                         }
                     }) {
                         Icon(
-                            imageVector = if (isFavorite) MiuixIcons.Demibold.Favorites else MiuixIcons.Demibold.Favorites, // 保持图标一致，颜色不同
+                            imageVector = MiuixIcons.Demibold.Favorites,
                             contentDescription = "Favorite",
-                            modifier = Modifier.size(28.dp),
-                            tint = if (isFavorite) MiuixTheme.colorScheme.error else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                            modifier = Modifier.size(26.dp),
+                            tint = if (isFavorite) Color.Red else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.25f)
                         )
                     }
                 }
 
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(16.dp))
 
-                // 进度条 - 仅在封面页显示
+                // 工具栏 (定时、音效、下载、详情、更多)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val isTimerActive = remainingSecondsState != null
+                    IconButton(onClick = { showSleepTimerSettings = true }) {
+                        Icon(
+                            imageVector = MiuixIcons.Alarm,
+                            contentDescription = "Timer",
+                            modifier = Modifier.size(22.dp),
+                            tint = if (isTimerActive) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+
+                    IconButton(onClick = { 
+                        showEqualizerSettings = true 
+                    }) {
+                        Icon(
+                            imageVector = MiuixIcons.Tune,
+                            contentDescription = "Sound Effect",
+                            modifier = Modifier.size(22.dp),
+                            tint = if (Platform.playerController.isEqualizerEnabled()) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                    IconButton(onClick = {
+                        currentSong?.let { song ->
+                            if (isDownloaded) {
+                                Platform.toast.show("歌曲已下载至本地")
+                                return@IconButton
+                            }
+                            Platform.toast.show("开始下载: ${song.title}")
+                            val result = repository.downloadMusic(song)
+                            when (result) {
+                                DownloadResult.STARTED -> {}
+                                DownloadResult.EXISTS -> Platform.toast.show("已存在，无需下载")
+                                DownloadResult.ERROR -> Platform.toast.show("下载启动失败")
+                            }
+                        }
+                    }) {
+                        Icon(
+                            imageVector = if (isDownloaded) MiuixIcons.Folder else MiuixIcons.Download, 
+                            contentDescription = "Download", 
+                            modifier = Modifier.size(22.dp), 
+                            tint = if (isDownloaded) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                    IconButton(onClick = { showSongActions = true }) {
+                        Icon(imageVector = MiuixIcons.More, contentDescription = "More", modifier = Modifier.size(22.dp), tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // 2. 进度条与时间
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
                     var sliderValue by remember { mutableStateOf<Float?>(null) }
-                    
                     Slider(
                         value = sliderValue ?: if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f,
-                        onValueChange = { newValue ->
-                            sliderValue = newValue
-                        },
+                        onValueChange = { sliderValue = it },
                         onValueChangeFinished = {
                             sliderValue?.let {
                                 val seekPos = (it * duration).toLong()
                                 Platform.playerController.seekTo(seekPos)
-                                // 延迟 500ms 后再清空 sliderValue, 防止寻道时的旧状态回弹
                                 scope.launch {
                                     delay(500)
                                     sliderValue = null
@@ -371,30 +496,26 @@ fun PlayerScreen(
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        height = 22.dp, // 微调高度: 12dp 太细, 尝试 22dp 达到视觉平衡
                         colors = SliderDefaults.sliderColors(
                             foregroundColor = MiuixTheme.colorScheme.primary,
-                            backgroundColor = MiuixTheme.colorScheme.onSurfaceVariantActions.copy(alpha = 0.2f)
-                        ),
-                        hapticEffect = SliderDefaults.SliderHapticEffect.Step // 增加触感逻辑
+                            backgroundColor = MiuixTheme.colorScheme.onSurfaceVariantActions.copy(alpha = 0.15f)
+                        )
                     )
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(formatTime(sliderValue?.let { (it * duration).toLong() } ?: currentPosition), fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                        Text(formatTime(duration), fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                        Text(formatTime(sliderValue?.let { (it * duration).toLong() } ?: currentPosition), fontSize = 11.sp, color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                        Text(formatTime(duration), fontSize = 11.sp, color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                     }
                 }
 
-                Spacer(Modifier.height(32.dp))
-            }
+                Spacer(Modifier.height(20.dp))
 
-            // 控制器 - 仅在封面页显示
-            if (selectedTabIndex == 0) {
+                // 3. 播放控制按键组
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // 播放模式
@@ -405,63 +526,57 @@ fun PlayerScreen(
                             PlayMode.RANDOM -> PlayMode.LIST_LOOP
                         }
                         Platform.playerController.setPlayMode(nextMode)
-
                     }) {
                         when (playMode) {
                             PlayMode.LIST_LOOP -> Icon(
                                 imageVector = MiuixIcons.Demibold.Replace,
                                 contentDescription = "列表循环",
                                 modifier = Modifier.size(24.dp),
-                                tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                                tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                             )
                             PlayMode.SINGLE_LOOP -> Box {
                                 Icon(
                                     imageVector = MiuixIcons.Demibold.Refresh,
                                     contentDescription = "单曲循环",
                                     modifier = Modifier.size(24.dp),
-                                    tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                                    tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                                 )
                                 Text(
                                     text = "1",
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.align(Alignment.Center).offset(y = 1.dp)
+                                    modifier = Modifier.align(Alignment.Center).offset(y = 1.dp),
+                                    color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                                 )
                             }
                             PlayMode.RANDOM -> Icon(
                                 imageVector = MiuixIcons.Demibold.Help,
                                 contentDescription = "随机播放",
                                 modifier = Modifier.size(24.dp),
-                                tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                                tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                             )
                         }
                     }
 
-                    // 上一曲
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(RoundedCornerShape(28.dp))
-                            .clickable {
-                                Platform.logger.i("PlayerScreen", "点击上一曲按钮")
-                                Platform.playerController.previous()
-                            },
-                        contentAlignment = Alignment.Center
+                    // 上一曲 (SkipPrevious)
+                    IconButton(
+                        onClick = { Platform.playerController.previous() },
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
-                            imageVector = MiuixIcons.Demibold.ChevronBackward,
-                            contentDescription = "Previous", 
-                            modifier = Modifier.size(32.dp),
+                            imageVector = Icons.Default.SkipPrevious,
+                            contentDescription = "Previous",
+                            modifier = Modifier.size(30.dp),
                             tint = MiuixTheme.colorScheme.onSurface
                         )
                     }
 
-                    // 播放/暂停/缓冲
+                    // 播放/暂停大白盘
                     Box(
                         modifier = Modifier
                             .size(68.dp)
                             .clip(RoundedCornerShape(34.dp))
-                            .background(MiuixTheme.colorScheme.primary)
+                            .background(Color.White)
                             .clickable {
                                 if (playbackState == PlaybackState.PLAYING) Platform.playerController.pause()
                                 else if (playbackState == PlaybackState.PAUSED || playbackState == PlaybackState.IDLE) Platform.playerController.resume()
@@ -470,51 +585,43 @@ fun PlayerScreen(
                     ) {
                         if (playbackState == PlaybackState.BUFFERING) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(30.dp)
                             )
                         } else {
                             Icon(
                                 imageVector = if (playbackState == PlaybackState.PLAYING) MiuixIcons.Demibold.Pause else MiuixIcons.Demibold.Play,
                                 contentDescription = "Play/Pause",
-                                tint = MiuixTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(36.dp)
+                                tint = MiuixTheme.colorScheme.primary,
+                                modifier = Modifier.size(34.dp)
                             )
                         }
                     }
 
-                    // 下一曲
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(RoundedCornerShape(28.dp))
-                            .clickable {
-                                Platform.logger.i("PlayerScreen", "点击下一曲按钮")
-                                Platform.playerController.next()
-                            },
-                        contentAlignment = Alignment.Center
+                    // 下一曲 (SkipNext)
+                    IconButton(
+                        onClick = { Platform.playerController.next() },
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
-                            imageVector = MiuixIcons.Demibold.ChevronForward,
-                            contentDescription = "Next", 
-                            modifier = Modifier.size(32.dp),
+                            imageVector = Icons.Default.SkipNext,
+                            contentDescription = "Next",
+                            modifier = Modifier.size(30.dp),
                             tint = MiuixTheme.colorScheme.onSurface
                         )
                     }
 
                     // 播放列表按钮
-                    IconButton(onClick = {
-                        GlobalState.togglePlaylist(true)
-                    }) {
+                    IconButton(onClick = { GlobalState.togglePlaylist(true) }) {
                         Icon(
                             imageVector = MiuixIcons.Demibold.Playlist,
                             contentDescription = "Playlist",
-                            modifier = Modifier.size(26.dp),
-                            tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                            modifier = Modifier.size(24.dp),
+                            tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         )
                     }
                 }
 
-                Spacer(Modifier.height(48.dp))
+                Spacer(Modifier.height(28.dp))
             }
         }
 
@@ -573,6 +680,478 @@ fun PlayerScreen(
                 )
             }
         }
+
+        // 选择歌单对话框
+        WindowDialog(
+            title = "添加音乐至",
+            show = showSelectPlaylistDialog.value,
+            onDismissRequest = { showSelectPlaylistDialog.value = false }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 300.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (playlists.isEmpty()) {
+                    Text("暂无歌单", color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f), modifier = Modifier.padding(vertical = 16.dp))
+                } else {
+                    playlists.forEach { playlist ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable {
+                                    currentSong?.let { song ->
+                                        scope.launch {
+                                            try {
+                                                repository.addSongToPlaylist(song.id, playlist.id)
+                                                Platform.toast.show("已成功添加至「${playlist.name}」")
+                                            } catch (e: Exception) {
+                                                Platform.toast.show("添加失败")
+                                            }
+                                            showSelectPlaylistDialog.value = false
+                                        }
+                                    }
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = MiuixIcons.Favorites,
+                                    contentDescription = null,
+                                    tint = getPlaylistIconColor(playlist.id, MiuixTheme.colorScheme.primary),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    text = playlist.name,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MiuixTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        WindowDialog(
+            title = "歌曲详情",
+            show = showDetailsDialog.value,
+            onDismissRequest = { showDetailsDialog.value = false }
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                DetailItem(label = "歌名", value = currentSong?.title ?: "未知")
+                DetailItem(label = "歌手", value = currentSong?.artist ?: "未知")
+                DetailItem(label = "专辑", value = currentSong?.album ?: "未知")
+                DetailItem(label = "文件名", value = currentSong?.filename ?: "未知")
+                
+                Spacer(modifier = Modifier.height(10.dp))
+                
+                TextButton(
+                    text = "关闭",
+                    onClick = { showDetailsDialog.value = false },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.textButtonColorsPrimary()
+                )
+            }
+        }
+
+
+        WindowBottomSheet(
+            show = showSongActions,
+            title = null,
+            onDismissRequest = { showSongActions = false }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                horizontalAlignment = Alignment.Start
+            ) {
+                // 1. 扁平化曲目卡片头部 (左对齐，左圆角小封面 + 右文本)
+                val albumArtUrl = utils.CoverUtil.getCoverUrl(currentSong)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(60.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MiuixTheme.colorScheme.secondaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (albumArtUrl != null) {
+                            com.seiko.imageloader.ui.AutoSizeImage(
+                                url = albumArtUrl,
+                                contentDescription = "Album Art",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = currentSong?.title ?: currentSong?.filename ?: "未知音乐",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MiuixTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = currentSong?.artist ?: "未知歌手",
+                            fontSize = 13.sp,
+                            color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    // 项 0: 添加到收藏夹/歌单
+                    BasicComponent(
+                        title = "添加到收藏夹",
+                        startAction = {
+                            Icon(
+                                imageVector = MiuixIcons.Favorites,
+                                contentDescription = "Add to playlist",
+                                tint = MiuixTheme.colorScheme.primary,
+                                modifier = Modifier.padding(end = 16.dp).size(20.dp)
+                            )
+                        },
+                        onClick = {
+                            showSongActions = false
+                            showSelectPlaylistDialog.value = true
+                        }
+                    )
+
+                    // 项 1: 下载到本地
+                    BasicComponent(
+                        title = if (isDownloaded) "已下载到本地" else "下载到本地",
+                        startAction = {
+                            Icon(
+                                imageVector = if (isDownloaded) MiuixIcons.Folder else MiuixIcons.Download,
+                                contentDescription = "Download",
+                                tint = if (isDownloaded) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.primary,
+                                modifier = Modifier.padding(end = 16.dp).size(20.dp)
+                            )
+                        },
+                        onClick = {
+                            showSongActions = false
+                            if (isDownloaded) {
+                                Platform.toast.show("歌曲已存在于本地")
+                                return@BasicComponent
+                            }
+                            currentSong?.let { song ->
+                                Platform.toast.show("开始下载: ${song.title}")
+                                Platform.logger.i("PlayerScreen", "开始下载: ${song.title}")
+                                val result = repository.downloadMusic(song)
+                                when (result) {
+                                    DownloadResult.STARTED -> { /* Toast already shown */ }
+                                    DownloadResult.EXISTS -> Platform.toast.show("已存在，无需下载")
+                                    DownloadResult.ERROR -> Platform.toast.show("下载启动失败")
+                                }
+                            }
+                        }
+                    )
+
+                    // 项 2: 重新刮削
+                    BasicComponent(
+                        title = "重新刮削",
+                        startAction = {
+                            Icon(
+                                imageVector = MiuixIcons.Refresh,
+                                contentDescription = "Refresh",
+                                tint = MiuixTheme.colorScheme.primary,
+                                modifier = Modifier.padding(end = 16.dp).size(20.dp)
+                            )
+                        },
+                        onClick = {
+                            showSongActions = false
+                            currentSong?.let { song ->
+                                scope.launch {
+                                    Platform.toast.show("重新刮削中...")
+                                    Platform.logger.i("PlayerScreen", "请求重新刮削歌曲: ${song.title}")
+                                    try {
+                                        val res = api.clearMetadata(songId = song.id)
+                                        if (res.success) {
+                                            repository.clearMetadata(song)
+                                            repository.ensureCoverDownloaded(song)
+                                            repository.ensureLyricsDownloaded(song)
+                                            
+                                            val localLrc = utils.FileStore.readLyrics(song.id)
+                                            lyrics = if (localLrc != null) {
+                                                LrcParser.parse(localLrc, song.title)
+                                            } else {
+                                                emptyList()
+                                            }
+                                            Platform.toast.show("刮削已就绪")
+                                        } else {
+                                            Platform.toast.show("重新刮削触发失败")
+                                        }
+                                   } catch (e: Exception) {
+                                        Platform.logger.e("PlayerScreen", "重新刮削异常", e)
+                                        Platform.toast.show("重新刮削失败")
+                                    }
+                                }
+                            }
+                        }
+                    )
+
+                    // 项 3: 歌曲详情
+                    BasicComponent(
+                        title = "歌曲详情",
+                        startAction = {
+                            Icon(
+                                imageVector = MiuixIcons.Info,
+                                contentDescription = "Info",
+                                tint = MiuixTheme.colorScheme.primary,
+                                modifier = Modifier.padding(end = 16.dp).size(20.dp)
+                            )
+                        },
+                        onClick = {
+                            showSongActions = false
+                            showDetailsDialog.value = true
+                        }
+                    )
+
+                    // 项 4: 删除此音乐
+                    BasicComponent(
+                        startAction = {
+                            Icon(
+                                imageVector = MiuixIcons.Delete,
+                                contentDescription = "Delete",
+                                tint = Color.Red.copy(alpha = 0.8f),
+                                modifier = Modifier.padding(end = 16.dp).size(20.dp)
+                            )
+                        },
+                        onClick = {
+                            showSongActions = false
+                            showDeleteDialog.value = true
+                        }
+                    ) {
+                        Text(
+                            text = "删除此音乐",
+                            color = Color.Red.copy(alpha = 0.8f),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+
+        WindowBottomSheet(
+            show = showSleepTimerSettings,
+            title = "定时关闭",
+            onDismissRequest = { showSleepTimerSettings = false }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+
+                remainingSecondsState?.let { seconds ->
+                    val min = seconds / 60
+                    val sec = seconds % 60
+                    Text(
+                        text = "正在倒计时：${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}",
+                        fontSize = 14.sp,
+                        color = MiuixTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val options = listOf(
+                        "5 分钟" to 5,
+                        "15 分钟" to 15,
+                        "30 分钟" to 30,
+                        "60 分钟" to 60,
+                        "自定义 5 秒 (调试验证)" to -1
+                    )
+
+                    options.forEach { (label, minutes) ->
+                        BasicComponent(
+                            title = label,
+                            onClick = {
+                                showSleepTimerSettings = false
+                                if (minutes == -1) {
+                                    utils.SleepTimerManager.startTimerSeconds(5)
+                                } else {
+                                    utils.SleepTimerManager.startTimer(minutes)
+                                }
+                                Platform.toast.show("已设定 $label 后关闭")
+                            }
+                        )
+                    }
+
+                    if (remainingSecondsState != null) {
+                        BasicComponent(
+                            onClick = {
+                                showSleepTimerSettings = false
+                                utils.SleepTimerManager.stopTimer()
+                                Platform.toast.show("已取消定时关闭")
+                            }
+                        ) {
+                            Text(
+                                text = "关闭定时",
+                                color = Color.Red,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+        }
+
+        WindowBottomSheet(
+            show = showEqualizerSettings,
+            title = "音效与均衡器",
+            onDismissRequest = { showEqualizerSettings = false }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                val bands = Platform.playerController.getEqualizerBands()
+                var levels by remember { mutableStateOf(Platform.playerController.getEqualizerBandLevels()) }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(text = "均衡器频率微调", fontSize = 13.sp, color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f), modifier = Modifier.padding(bottom = 12.dp))
+
+                        (bands.zip(levels)).forEachIndexed { index, pair ->
+                            val bandName = pair.first
+                            val levelValue = pair.second
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = bandName,
+                                    fontSize = 13.sp,
+                                    color = MiuixTheme.colorScheme.onSurface,
+                                    modifier = Modifier.width(60.dp)
+                                )
+                                Slider(
+                                    value = levelValue.toFloat(),
+                                    onValueChange = {
+                                        val valInt = it.roundToInt()
+                                        val newList = levels.toMutableList()
+                                        if (index < newList.size) {
+                                            newList[index] = valInt
+                                            levels = newList
+                                        }
+                                        Platform.playerController.setEqualizerBandLevel(index, valInt)
+                                    },
+                                    valueRange = -1500f..1500f,
+                                    modifier = Modifier.weight(1f),
+                                    colors = SliderDefaults.sliderColors(
+                                        foregroundColor = MiuixTheme.colorScheme.primary,
+                                        backgroundColor = MiuixTheme.colorScheme.onSurfaceVariantActions.copy(alpha = 0.15f)
+                                    )
+                                )
+                                val dbText = if (levelValue >= 0) "+${levelValue / 100} dB" else "${levelValue / 100} dB"
+                                Text(
+                                    text = dbText,
+                                    fontSize = 12.sp,
+                                    color = MiuixTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.width(55.dp),
+                                    textAlign = TextAlign.End
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "快捷预设",
+                    fontSize = 14.sp,
+                    color = MiuixTheme.colorScheme.onSurface,
+                    modifier = Modifier.align(Alignment.Start).padding(horizontal = 4.dp, vertical = 6.dp)
+                )
+
+                // 原声 = 所有频段归零，等同于关闭均衡器
+                val presets = listOf(
+                    "原声" to listOf(0, 0, 0, 0, 0),
+                    "流行" to listOf(300, 200, -100, 200, 400),
+                    "摇滚" to listOf(500, 300, -200, 400, 600),
+                    "低音" to listOf(800, 400, 0, 0, 0),
+                    "声乐" to listOf(-200, 0, 600, 300, -100)
+                )
+
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        presets.forEach { (name, bandVals) ->
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MiuixTheme.colorScheme.onSurfaceVariantActions.copy(alpha = 0.06f))
+                                    .clickable {
+                                        bandVals.forEachIndexed { idx, valDb ->
+                                            Platform.playerController.setEqualizerBandLevel(idx, valDb)
+                                        }
+                                        levels = Platform.playerController.getEqualizerBandLevels()
+                                        Platform.toast.show("已套用 $name 预设")
+                                    }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(text = name, fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurface)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+        }
     }
 }
 
@@ -580,104 +1159,271 @@ fun PlayerScreen(
 fun LyricsView(
     lyrics: List<LrcLine>,
     currentPosition: Long,
+    fontSizeSp: Float,
+    translationMode: Int, // 0: 隐藏, 1: 仅当前行, 2: 全局双语
+    currentSong: model.Song?,
     onLineClick: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val currentIndex = LrcParser.getCurrentLineIndex(lyrics, currentPosition)
     val listState = rememberLazyListState()
     val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    val playbackState by Platform.playerController.playbackState.collectAsState()
 
-    BoxWithConstraints(modifier = modifier) {
+    // 记录用户是否进行了手动滚动介入
+    val isDragged by listState.interactionSource.collectIsDraggedAsState()
+    var userScrolledByManual by remember { mutableStateOf(false) }
 
-        // 监听索引变化，平滑轮滚到正中心
-        LaunchedEffect(currentIndex) {
-            if (currentIndex >= 0) {
-                // 已经在 LazyColumn 设置了 contentPadding = maxHeight / 2 (项顶部对齐中心)
-                // 现在将项向上偏移半个项高度，使项的“中心”对齐视口“中心”
-                val halfItemHeightPx = with(density) { (80.dp.toPx() / 2).toInt() }
-                listState.animateScrollToItem(
-                    index = currentIndex,
-                    scrollOffset = halfItemHeightPx
-                )
+    LaunchedEffect(isDragged) {
+        if (isDragged) {
+            userScrolledByManual = true
+        } else {
+            if (userScrolledByManual) {
+                // 用户松手后，静止 5 秒自动复位
+                delay(5000)
+                userScrolledByManual = false
+                if (currentIndex >= 0) {
+                    val halfItemHeightPx = with(density) { (80.dp.toPx() / 2).toInt() }
+                    listState.animateScrollToItem(
+                        index = currentIndex,
+                        scrollOffset = halfItemHeightPx
+                    )
+                }
             }
         }
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            // 增加上下间距，确保第一行和最后一行也能滚到中间
-            contentPadding = PaddingValues(vertical = maxHeight / 2)
-        ) {
-            itemsIndexed(lyrics, key = { index, _ -> index }) { index, line ->
-                val isActive = index == currentIndex
-                
-                // 动画属性
-                val scale by animateFloatAsState(
-                    targetValue = if (isActive) 1.15f else 1f,
-                    animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
-                )
-                val alpha by animateFloatAsState(
-                    targetValue = if (isActive) 1f else 0.5f,
-                    animationSpec = tween(durationMillis = 400)
-                )
+    }
 
-                Column(
+    // 计算当前处于视口中央的歌词项索引
+    val centerItemIndex by remember {
+        derivedStateOf {
+            val items = listState.layoutInfo.visibleItemsInfo
+            if (items.isEmpty()) 0 else {
+                val viewportCenter = listState.layoutInfo.viewportEndOffset / 2
+                items.minByOrNull { kotlin.math.abs((it.offset + it.size / 2) - viewportCenter) }?.index ?: 0
+            }
+        }
+    }
+
+    // 自动跟随滚动
+    LaunchedEffect(currentIndex) {
+        if (!userScrolledByManual && currentIndex >= 0) {
+            val halfItemHeightPx = with(density) { (80.dp.toPx() / 2).toInt() }
+            listState.animateScrollToItem(
+                index = currentIndex,
+                scrollOffset = halfItemHeightPx
+            )
+        }
+    }
+
+    Box(modifier = modifier) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // 1. 固定头部信息 (左对齐)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = currentSong?.title ?: currentSong?.filename ?: "未知音乐",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MiuixTheme.colorScheme.onSurface,
+                    maxLines = 1
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = currentSong?.artist ?: "未知歌手",
+                    fontSize = 13.sp,
+                    color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    maxLines = 1
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 2. 歌词列表
+            BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    state = listState,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { onLineClick(line.time) }
-                        // 使用固定（最小）高度来防止 fontSize/scale 变化引起的布局回弹
-                        .heightIn(min = 80.dp) 
-                        .padding(vertical = 12.dp, horizontal = 32.dp) // 增加水平 padding 容纳缩放
-                        .graphicsLayer {
-                            this.alpha = alpha
-                            this.scaleX = scale
-                            this.scaleY = scale
-                        },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    line.lines.forEachIndexed { lineIndex, text ->
-                        val content = @Composable {
-                            // 颜色动画
-                            val textColor by animateColorAsState(
-                                targetValue = if (lineIndex == 0) {
-                                    if (isActive) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantActions
-                                } else {
-                                    if (isActive) MiuixTheme.colorScheme.onSurfaceVariantActions else MiuixTheme.colorScheme.onSurfaceVariantActions.copy(alpha = 0.6f)
-                                },
-                                animationSpec = tween(durationMillis = 400)
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = 0.99f }
+                        .drawWithContent {
+                            drawContent()
+                            val colors = listOf(
+                                Color.Transparent,
+                                Color.Black,
+                                Color.Black,
+                                Color.Transparent
                             )
+                            val stops = listOf(0.0f, 0.08f, 0.92f, 1.0f)
+                            drawRect(
+                                brush = Brush.verticalGradient(
+                                    colorStops = stops.zip(colors).toTypedArray(),
+                                    startY = 0f,
+                                    endY = size.height
+                                ),
+                                blendMode = BlendMode.DstIn
+                            )
+                        },
+                    horizontalAlignment = Alignment.Start,
+                    contentPadding = PaddingValues(vertical = maxHeight / 2)
+                ) {
+                    itemsIndexed(lyrics, key = { index, _ -> index }) { index, line ->
+                        val isActive = index == currentIndex
+                        
+                        val scale by animateFloatAsState(
+                            targetValue = if (isActive) 1.1f else 1f,
+                            animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
+                        )
+                        val alpha by animateFloatAsState(
+                            targetValue = if (isActive) 1f else 0.45f,
+                            animationSpec = tween(durationMillis = 400)
+                        )
 
-                            Text(
-                                text = text,
-                                // 这里不再动 fontSize，而是靠 graphicsLayer 的 scale 缩放，
-                                // 这样就不会触发 Re-layout，从而彻底解决滚动抖动。
-                                fontSize = if (lineIndex == 0) 20.sp else 15.sp,
-                                fontWeight = if (isActive && lineIndex == 0) FontWeight.Bold else FontWeight.Normal,
-                                color = textColor,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth()
+                        val hasTrans = line.lines.size > 1 && translationMode != 0
+                        val minHeight = if (hasTrans) 80.dp else 50.dp
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { onLineClick(line.time) }
+                                .heightIn(min = minHeight)
+                                .padding(vertical = 8.dp, horizontal = 32.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .graphicsLayer {
+                                        this.alpha = alpha
+                                        this.scaleX = scale
+                                        this.scaleY = scale
+                                        this.transformOrigin = TransformOrigin(0f, 0.5f)
+                                    },
+                                horizontalAlignment = Alignment.Start,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                line.lines.forEachIndexed { lineIndex, text ->
+                                    if (lineIndex > 0 && translationMode == 0) return@forEachIndexed
+
+                                    val isMainLine = lineIndex == 0
+                                    val content = @Composable {
+                                        val textColor by animateColorAsState(
+                                            targetValue = if (isMainLine) {
+                                                if (isActive) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantActions
+                                            } else {
+                                                if (isActive) MiuixTheme.colorScheme.onSurfaceVariantActions else MiuixTheme.colorScheme.onSurfaceVariantActions.copy(alpha = 0.4f)
+                                            },
+                                            animationSpec = tween(durationMillis = 400)
+                                        )
+
+                                        Text(
+                                            text = text,
+                                            fontSize = if (isMainLine) fontSizeSp.sp else (fontSizeSp * 0.75f).sp,
+                                            fontWeight = if (isActive && isMainLine) FontWeight.Bold else FontWeight.Normal,
+                                            color = textColor,
+                                            textAlign = TextAlign.Start
+                                        )
+                                    }
+
+                                    if (isMainLine) {
+                                        content()
+                                    } else {
+                                        if (translationMode == 1) {
+                                            AnimatedVisibility(
+                                                visible = isActive,
+                                                enter = fadeIn() + expandVertically(),
+                                                exit = fadeOut() + shrinkVertically()
+                                            ) {
+                                                Column {
+                                                    Spacer(modifier = Modifier.height(4.dp))
+                                                    content()
+                                                }
+                                            }
+                                        } else if (translationMode == 2) {
+                                            Column {
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                content()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                        }
+                    }
+                }
+                if (userScrolledByManual) {
+                    val lineColor = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.15f)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.Center)
+                            .padding(horizontal = 16.dp),
+                        contentAlignment = Alignment.CenterEnd
+                    ) {
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                        ) {
+                            val pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                            drawLine(
+                                color = lineColor,
+                                start = Offset(0f, 0f),
+                                end = Offset(size.width, 0f),
+                                pathEffect = pathEffect,
+                                strokeWidth = 1f
                             )
                         }
 
-                        if (lineIndex == 0) {
-                            content()
-                        } else {
-                            AnimatedVisibility(
-                                visible = isActive,
-                                enter = fadeIn() + expandVertically(),
-                                exit = fadeOut() + shrinkVertically()
-                            ) {
-                                Column {
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    content()
-                                }
-                            }
+                        val centerLineTime = lyrics.getOrNull(centerItemIndex)?.time ?: 0L
+                        Box(
+                            modifier = Modifier
+                                .padding(end = 8.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(MiuixTheme.colorScheme.surface.copy(alpha = 0.8f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = formatTime(centerLineTime),
+                                fontSize = 11.sp,
+                                color = MiuixTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
             }
+        }
+
+        // 4. 最右下角播放/暂停控制小按键
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 16.dp, end = 16.dp)
+                .size(44.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .clickable {
+                    if (playbackState == PlaybackState.PLAYING) {
+                        Platform.playerController.pause()
+                    } else {
+                        Platform.playerController.resume()
+                    }
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            val isPlaying = playbackState == PlaybackState.PLAYING
+            Icon(
+                imageVector = if (isPlaying) MiuixIcons.Demibold.Pause else MiuixIcons.Demibold.Play,
+                contentDescription = if (isPlaying) "暂停" else "播放",
+                tint = MiuixTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
         }
     }
 }
@@ -688,3 +1434,45 @@ fun formatTime(ms: Long): String {
     val seconds = totalSeconds % 60
     return "${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
 }
+
+@Composable
+fun DetailItem(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top
+    ) {
+        Text(
+            text = label,
+            fontSize = 14.sp,
+            color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = value,
+            fontSize = 14.sp,
+            color = MiuixTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(3.5f),
+            textAlign = TextAlign.End
+        )
+    }
+}
+
+private val MorandiColors = listOf(
+    Color(0xFFF48FB1), // 柔粉
+    Color(0xFF90CAF9), // 淡蓝
+    Color(0xFFA5D6A7), // 薄荷绿
+    Color(0xFFCE93D8), // 薰衣草紫
+    Color(0xFFFFE082), // 香草黄
+    Color(0xFFFFAB91), // 珊瑚橙
+    Color(0xFF80CBC4), // 青玉色
+    Color(0xFFB0BEC5)  // 浅灰蓝
+)
+
+private fun getPlaylistIconColor(playlistId: String, primaryColor: Color): Color {
+    if (playlistId == "default") return primaryColor
+    val index = kotlin.math.abs(playlistId.hashCode()) % MorandiColors.size
+    return MorandiColors[index]
+}
+
+

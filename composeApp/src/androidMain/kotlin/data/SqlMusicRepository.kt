@@ -274,6 +274,7 @@ class SqlMusicRepository(
                     queries.addSongToPlaylist(playlistId, songId)
                 }
             }
+            queries.refreshPlaylistCount(playlistId)
         }
     }
 
@@ -415,6 +416,12 @@ class SqlMusicRepository(
         val lyricsFile = lyricsPath ?: "lyrics/lyrics_$songId.lrc"
         Platform.logger.i("SqlMusicRepository", "尝试清理本地歌词: $lyricsFile")
         utils.FileStore.deleteFile(lyricsFile)
+    }
+
+    override suspend fun clearMetadata(song: Song) {
+        Platform.logger.i("SqlMusicRepository", "清理本地元数据缓存: ${song.title}")
+        cleanupLocalFiles(song.id, audioPath = null, coverPath = song.localCoverPath, lyricsPath = song.localLyricsPath)
+        queries.updateCoverAndLyrics(null, null, song.id)
     }
 
     private fun SongEntity.toModel(): Song {

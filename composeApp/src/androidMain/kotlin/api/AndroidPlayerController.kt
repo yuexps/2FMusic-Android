@@ -61,6 +61,7 @@ object AndroidPlayerController : BasePlayerController() {
             .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(audioAttributes, true) // true means handle audio focus automatically
             .build().apply {
+                this@AndroidPlayerController.initEqualizer(this.audioSessionId)
                 addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(state: Int) {
                         val newState = when (state) {
@@ -98,17 +99,20 @@ object AndroidPlayerController : BasePlayerController() {
                         currentIndex.value = index
                     }
 
+                    override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                        this@AndroidPlayerController.initEqualizer(audioSessionId)
+                    }
+
                     override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                         val song = currentSong.value
-                        var errorMessage = "播放失败: ${error.message}"
-
-                        // 简单的逻辑判断：如果歌曲没有本地路径且报错，通常是因为离线/网络问题
-                        if (song != null) {
-                            errorMessage = if (song.localAudioPath == null) {
+                        val errorMessage = if (song != null) {
+                            if (song.localAudioPath == null) {
                                 "歌曲 [${song.title}] 未下载，且无法连接服务器。"
                             } else {
                                 "播放本地歌曲 [${song.title}] 失败，文件可能已损坏。"
                             }
+                        } else {
+                            "播放失败: ${error.message}"
                         }
 
                         Platform.logger.e("Player", "播放器错误: 代码=${error.errorCode}, 消息=${error.message}", error)
@@ -407,6 +411,84 @@ object AndroidPlayerController : BasePlayerController() {
                 player.prepare()
                 // 此时不调用 play()，由用户手动开始
             }
+        }
+    }
+
+    // 均衡器成员
+    private var equalizer: android.media.audiofx.Equalizer? = null
+    private var eqEnabled = false
+    private val bandLevels = mutableMapOf<Int, Int>() // 缓存设置的频段增益（毫分贝级）
+
+    fun initEqualizer(sessionId: Int) {
+        try {
+            if (equalizer != null) {
+                equalizer?.release()
+                equalizer = null
+            }
+            if (sessionId != android.media.audiofx.AudioEffect.ERROR_BAD_VALUE && sessionId != 0) {
+                val eq = android.media.audiofx.Equalizer(0, sessionId)
+                equalizer = eq
+                eq.enabled = eqEnabled
+                
+                // 恢复缓存的频段增益
+                bandLevels.forEach { (band, level) ->
+                    try {
+                        eq.setBandLevel(band.toShort(), level.toShort())
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun isEqualizerSupported(): Boolean {
+        return equalizer != null
+    }
+
+    override fun isEqualizerEnabled(): Boolean {
+        return eqEnabled
+    }
+
+    override fun setEqualizerEnabled(enabled: Boolean) {
+        eqEnabled = enabled
+        try {
+            equalizer?.enabled = enabled
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun getEqualizerBands(): List<String> {
+        val eq = equalizer ?: return listOf("60Hz", "230Hz", "910Hz", "4kHz", "14kHz")
+        val numBands = eq.numberOfBands.toInt()
+        val bands = mutableListOf<String>()
+        for (i in 0 until numBands) {
+            val freq = eq.getCenterFreq(i.toShort())
+            bands.add(if (freq >= 1000000) "${freq / 1000000}kHz" else "${freq / 1000}Hz")
+        }
+        return bands
+    }
+
+    override fun getEqualizerBandLevels(): List<Int> {
+        val eq = equalizer ?: return listOf(0, 0, 0, 0, 0)
+        val numBands = eq.numberOfBands.toInt()
+        val levels = mutableListOf<Int>()
+        for (i in 0 until numBands) {
+            val lvl = bandLevels[i] ?: eq.getBandLevel(i.toShort()).toInt()
+            levels.add(lvl)
+        }
+        return levels
+    }
+
+    override fun setEqualizerBandLevel(band: Int, level: Int) {
+        bandLevels[band] = level
+        try {
+            equalizer?.setBandLevel(band.toShort(), level.toShort())
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }

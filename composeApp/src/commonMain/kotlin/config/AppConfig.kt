@@ -9,4 +9,8 @@ interface AppConfig {
     fun getPasswordHash(): String?
     fun savePlaybackState(state: model.PlaybackStateData)
     fun loadPlaybackState(): model.PlaybackStateData?
+    fun getLyricFontSize(): Float = 20f
+    fun setLyricFontSize(size: Float) {}
+    fun getLyricTranslationMode(): Int = 1 // 0: 隐藏, 1: 仅当前行, 2: 全局双语
+    fun setLyricTranslationMode(mode: Int) {}
 }

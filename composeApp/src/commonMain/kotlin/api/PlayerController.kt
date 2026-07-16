@@ -25,6 +25,14 @@ interface PlayerController {
     fun setPlayMode(mode: PlayMode)
     fun setPlaylist(songs: List<Song>)
     fun playAtIndex(index: Int)
+
+    // 均衡器相关音效控制
+    fun isEqualizerSupported(): Boolean
+    fun isEqualizerEnabled(): Boolean
+    fun setEqualizerEnabled(enabled: Boolean)
+    fun getEqualizerBands(): List<String>
+    fun getEqualizerBandLevels(): List<Int>
+    fun setEqualizerBandLevel(band: Int, level: Int)
 }
 
 

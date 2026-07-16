@@ -67,4 +67,20 @@ class AndroidAppConfig : AppConfig {
             null
         }
     }
+
+    override fun getLyricFontSize(): Float {
+        return getPrefs().getFloat("lyric_font_size", 20f)
+    }
+
+    override fun setLyricFontSize(size: Float) {
+        getPrefs().edit { putFloat("lyric_font_size", size) }
+    }
+
+    override fun getLyricTranslationMode(): Int {
+        return getPrefs().getInt("lyric_translation_mode", 1)
+    }
+
+    override fun setLyricTranslationMode(mode: Int) {
+        getPrefs().edit { putInt("lyric_translation_mode", mode) }
+    }
 }

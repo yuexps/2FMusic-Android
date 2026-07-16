@@ -29,4 +29,5 @@ interface MusicRepository {
     suspend fun ensureLyricsDownloaded(song: Song)
     fun downloadMusic(song: Song): DownloadResult
     suspend fun deleteLocalAudio(songId: String)
+    suspend fun clearMetadata(song: Song)
 }

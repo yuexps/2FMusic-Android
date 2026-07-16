@@ -30,10 +30,12 @@ kotlin {
             dependencies {
                 api(libs.ui)
                 api(libs.components.resources)
+                implementation(compose.materialIconsExtended)
                 
                 // Miuix
                 implementation(libs.miuix.ui)
                 implementation(libs.miuix.icons)
+                implementation(libs.miuix.preference)
                 implementation(libs.haze)
                 
                 // Ktor & Serialization
