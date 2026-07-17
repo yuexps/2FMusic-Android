@@ -16,6 +16,10 @@ import androidx.core.content.ContextCompat
 import top.msfxp.music.shared.App
 
 
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
+
+@OptIn(UnstableApi::class)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

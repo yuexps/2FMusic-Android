@@ -376,38 +376,36 @@ fun App(platform: PlatformDependencies) {
 
         // 存储权限引导弹窗
         val showStoragePermissionDialog by GlobalState.showStoragePermissionDialog.collectAsState()
-        if (showStoragePermissionDialog) {
-            WindowDialog(
-                title = "存储权限申请",
-                show = showStoragePermissionDialog,
-                onDismissRequest = { GlobalState.updateShowStoragePermissionDialog(false) }
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "下载和缓存歌曲需要存储管理权限，以保存音频、歌词与封面文件。是否前往开启？",
-                        fontSize = 16.sp
+        WindowDialog(
+            title = "存储权限申请",
+            show = showStoragePermissionDialog,
+            onDismissRequest = { GlobalState.updateShowStoragePermissionDialog(false) }
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "下载和缓存歌曲需要存储管理权限，以保存音频、歌词与封面文件。是否前往开启？",
+                    fontSize = 16.sp
+                )
+                androidx.compose.foundation.layout.Spacer(Modifier.size(20.dp))
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    TextButton(
+                        text = "暂不开启",
+                        onClick = { GlobalState.updateShowStoragePermissionDialog(false) },
+                        modifier = Modifier.weight(1f)
                     )
-                    androidx.compose.foundation.layout.Spacer(Modifier.size(20.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        TextButton(
-                            text = "暂不开启",
-                            onClick = { GlobalState.updateShowStoragePermissionDialog(false) },
-                            modifier = Modifier.weight(1f)
-                        )
-                        androidx.compose.foundation.layout.Spacer(Modifier.size(12.dp))
-                        TextButton(
-                            text = "前往开启",
-                            onClick = {
-                                GlobalState.updateShowStoragePermissionDialog(false)
-                                Platform.requestStoragePermission?.invoke()
-                            },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.textButtonColorsPrimary()
-                        )
-                    }
+                    androidx.compose.foundation.layout.Spacer(Modifier.size(12.dp))
+                    TextButton(
+                        text = "前往开启",
+                        onClick = {
+                            GlobalState.updateShowStoragePermissionDialog(false)
+                            Platform.requestStoragePermission?.invoke()
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.textButtonColorsPrimary()
+                    )
                 }
             }
         }

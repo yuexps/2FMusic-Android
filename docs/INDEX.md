@@ -78,4 +78,4 @@
                 ?: throw Exception("网络请求失败")
         }
         ```
-3.  **如果需要监听广播**：在 [`MusicApi.kt:L508`](../composeApp/src/commonMain/kotlin/api/MusicApi.kt#L508) 处的 `handleBroadcast` 的 `when(type)` 分支中追加新广播事件解析并写入对应的 `SharedFlow` 进行事件发射。
+3.  **如果需要监听广播**：在 [MusicApi.kt](../composeApp/src/commonMain/kotlin/api/MusicApi.kt) 处的 `handleBroadcast` 的 `when(type)` 分支中追加新广播事件解析并写入对应的 `SharedFlow` 进行事件发射。

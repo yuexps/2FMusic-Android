@@ -141,7 +141,6 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
                             )
                         }
 
-                        if (showClearConfirm) {
                             WindowDialog(
                                 title = "清空记录",
                                 show = showClearConfirm,
@@ -183,7 +182,6 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
                                     }
                                 }
                             }
-                        }
                     }
                 }
             )
@@ -332,7 +330,6 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
                             )
                         }
 
-                        if (showConfigDialog) {
                             WindowDialog(
                                 title = "后端配置",
                                 show = showConfigDialog,
@@ -395,7 +392,6 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
                                     }
                                 }
                             }
-                        }
                     }
                 }
             } else {

@@ -160,7 +160,6 @@ fun PlaylistScreen(
                                     )
                                 }
 
-                                if (showClearConfirm) {
                                     WindowDialog(
                                         title = "清空历史",
                                         show = showClearConfirm,
@@ -202,7 +201,6 @@ fun PlaylistScreen(
                                             }
                                         }
                                     }
-                                }
                             }
                         }
                     )

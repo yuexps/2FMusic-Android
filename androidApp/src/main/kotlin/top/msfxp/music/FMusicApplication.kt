@@ -5,6 +5,10 @@ import coil.imageLoader
 import api.AndroidPlayerController
 
 
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
+
+@OptIn(UnstableApi::class)
 class FMusicApplication : Application() {
     override fun onCreate() {
         super.onCreate()

@@ -66,11 +66,8 @@ object FileStore {
         try {
             val path = "$dir/.nomedia".toPath()
             if (!fs.exists(path)) {
-                val sink = fs.sink(path).buffer()
-                try {
+                fs.sink(path).buffer().use { sink ->
                     sink.writeUtf8("")
-                } finally {
-                    sink.close()
                 }
             }
         } catch (_: Exception) {}
@@ -108,11 +105,8 @@ object FileStore {
      */
     fun saveFile(fileName: String, data: ByteArray) {
         val path = resolvePath(fileName)
-        val sink = fs.sink(path).buffer()
-        try {
+        fs.sink(path).buffer().use { sink ->
             sink.write(data)
-        } finally {
-            sink.close()
         }
     }
 
@@ -126,10 +120,9 @@ object FileStore {
         onProgress: ((bytesSentTotal: Long, contentLength: Long) -> Unit)? = null
     ) {
         val path = resolvePath(fileName)
-        val sink = fs.sink(path).buffer()
-        val buffer = ByteArray(8192)
-        var totalBytesRead = 0L
-        try {
+        fs.sink(path).buffer().use { sink ->
+            val buffer = ByteArray(8192)
+            var totalBytesRead = 0L
             while (!channel.isClosedForRead) {
                 val read = channel.readAvailable(buffer, 0, buffer.size)
                 if (read <= 0) break
@@ -138,8 +131,6 @@ object FileStore {
                 onProgress?.invoke(totalBytesRead, contentLength)
             }
             sink.flush()
-        } finally {
-            sink.close()
         }
     }
 
@@ -175,11 +166,8 @@ object FileStore {
             path = resolvePath("lyrics/lyrics_${songId}.lrc")
         }
         if (!fs.exists(path)) return null
-        val source = fs.source(path).buffer()
-        return try {
+        return fs.source(path).buffer().use { source ->
             source.readUtf8()
-        } finally {
-            source.close()
         }
     }
 
