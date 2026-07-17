@@ -1,6 +1,10 @@
 package top.msfxp.music.shared
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
@@ -27,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import utils.BackHandler
@@ -64,6 +69,7 @@ fun App(platform: PlatformDependencies) {
     val repository = platform.repository
     var selectedIndex by remember { mutableIntStateOf(0) }
     var showPlayerScreen by remember { mutableStateOf(false) }
+    var isMusicBatchMode by remember { mutableStateOf(false) }
     val isDarkTheme = isSystemInDarkTheme()
 
     val navigationItems = remember {
@@ -135,7 +141,11 @@ fun App(platform: PlatformDependencies) {
             Scaffold(
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 bottomBar = {
-                    if (!showPlayerScreen) {
+                    AnimatedVisibility(
+                        visible = !showPlayerScreen && !isMusicBatchMode,
+                        enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
+                        exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut()
+                    ) {
                         Column {
                             BottomPlayerBar(onClick = { showPlayerScreen = true })
                             NavigationBar {
@@ -159,6 +169,7 @@ fun App(platform: PlatformDependencies) {
                 ) {
                     MusicListScreen(
                         repository = repository,
+                        onBatchModeChange = { isMusicBatchMode = it },
                         modifier = Modifier
                             .fillMaxSize()
                             .graphicsLayer { alpha = if (selectedIndex == 0) 1f else 0f }

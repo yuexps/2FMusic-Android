@@ -1,5 +1,15 @@
 package ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -21,6 +31,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -36,6 +47,7 @@ import data.DownloadResult
 @Composable
 fun MusicListScreen(
     repository: MusicRepository,
+    onBatchModeChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val songs by repository.getLocalSongs().collectAsState(initial = emptyList())
@@ -58,6 +70,14 @@ fun MusicListScreen(
 
     var isBatchMode by remember { mutableStateOf(false) }
     var selectedSongIds by remember { mutableStateOf(emptySet<String>()) }
+
+    LaunchedEffect(isBatchMode) {
+        onBatchModeChange(isBatchMode)
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { onBatchModeChange(false) }
+    }
 
     BackHandler(enabled = isSearchExpanded || isBatchMode) {
         if (isSearchExpanded) {
@@ -113,103 +133,147 @@ fun MusicListScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = "音乐库",
-                scrollBehavior = scrollBehavior
-            )
-        },
-        floatingToolbar = {
-            if (isBatchMode) {
-                FloatingToolbar(
-                    cornerRadius = 16.dp
-                ) {
-                    Column(
-                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
-                    ) {
-                        // 1. 批量收藏图标按钮
-                        IconButton(
-                            onClick = {
-                                if (selectedSongIds.isEmpty()) {
-                                    Platform.toast.show("请先选择歌曲")
-                                } else {
-                                    activeMenuSong = null
-                                    showSelectPlaylistDialog = true
-                                }
-                            }
-                        ) {
-                            Icon(
-                                imageVector = MiuixIcons.Favorites,
-                                contentDescription = "Batch Favorite",
-                                tint = MiuixTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-
-                        // 2. 批量下载图标按钮
-                        IconButton(
-                            onClick = {
-                                if (selectedSongIds.isEmpty()) {
-                                    Platform.toast.show("请先选择歌曲")
-                                } else {
-                                    scope.launch {
-                                        Platform.toast.show("已加入后台批量下载: ${selectedSongIds.size} 首歌曲")
-                                        songs.filter { selectedSongIds.contains(it.id) }.forEach { song ->
-                                            repository.downloadMusic(song)
-                                        }
+            AnimatedContent(
+                targetState = isBatchMode,
+                transitionSpec = {
+                    fadeIn(tween(220)) togetherWith fadeOut(tween(140))
+                },
+                label = "batchTopBar"
+            ) { batchMode ->
+                if (batchMode) {
+                    SmallTopAppBar(
+                        title = "已选择 ${selectedSongIds.size} 首",
+                        navigationIcon = {
+                            Text(
+                                text = "取消",
+                                color = MiuixTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                                    .clickable {
                                         isBatchMode = false
                                         selectedSongIds = emptySet()
                                     }
-                                }
-                            }
+                            )
+                        }
+                    )
+                } else {
+                    TopAppBar(
+                        title = "音乐库",
+                        scrollBehavior = scrollBehavior
+                    )
+                }
+            }
+        },
+        floatingToolbar = {
+            AnimatedVisibility(
+                visible = isBatchMode,
+                enter = slideInVertically(
+                    animationSpec = tween(280),
+                    initialOffsetY = { it / 2 }
+                ) + fadeIn(tween(180)),
+                exit = slideOutVertically(
+                    animationSpec = tween(220),
+                    targetOffsetY = { it / 2 }
+                ) + fadeOut(tween(160))
+            ) {
+                FloatingToolbar(
+                    modifier = Modifier.fillMaxWidth(),
+                    cornerRadius = 20.dp
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = MiuixIcons.Download,
-                                contentDescription = "Batch Download",
+                            IconButton(
+                                onClick = {
+                                    isBatchMode = false
+                                    selectedSongIds = emptySet()
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = MiuixIcons.Close,
+                                    contentDescription = "退出批量管理",
+                                    tint = MiuixTheme.colorScheme.onSurface
+                                )
+                            }
+                            Box(
+                                modifier = Modifier.weight(1f),
+                                contentAlignment = androidx.compose.ui.Alignment.Center
+                            ) {
+                                Text(
+                                    text = "批量管理",
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Spacer(Modifier.width(48.dp))
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                        ) {
+                            BatchActionButton(
+                                icon = MiuixIcons.Favorites,
+                                label = "收藏",
                                 tint = MiuixTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp)
+                                onClick = {
+                                    if (selectedSongIds.isEmpty()) {
+                                        Platform.toast.show("请先选择歌曲")
+                                    } else {
+                                        activeMenuSong = null
+                                        showSelectPlaylistDialog = true
+                                    }
+                                },
+                                modifier = Modifier.weight(1f)
                             )
-                        }
-
-                        // 3. 批量删除图标按钮
-                        IconButton(
-                            onClick = {
-                                if (selectedSongIds.isEmpty()) {
-                                    Platform.toast.show("请先选择歌曲")
-                                } else {
-                                    activeMenuSong = null
-                                    showDeleteConfirmDialog = true
-                                }
-                            }
-                        ) {
-                            Icon(
-                                imageVector = MiuixIcons.Delete,
-                                contentDescription = "Batch Delete",
-                                tint = Color.Red.copy(alpha = 0.8f),
-                                modifier = Modifier.size(22.dp)
+                            BatchActionButton(
+                                icon = MiuixIcons.Download,
+                                label = "下载",
+                                tint = MiuixTheme.colorScheme.primary,
+                                onClick = {
+                                    if (selectedSongIds.isEmpty()) {
+                                        Platform.toast.show("请先选择歌曲")
+                                    } else {
+                                        scope.launch {
+                                            Platform.toast.show("已加入后台批量下载: ${selectedSongIds.size} 首歌曲")
+                                            songs.filter { selectedSongIds.contains(it.id) }.forEach { song ->
+                                                repository.downloadMusic(song)
+                                            }
+                                            isBatchMode = false
+                                            selectedSongIds = emptySet()
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.weight(1f)
                             )
-                        }
-
-                        // 4. 退出批量管理图标按钮 (用 Close 图标)
-                        IconButton(
-                            onClick = {
-                                isBatchMode = false
-                                selectedSongIds = emptySet()
-                            }
-                        ) {
-                            Icon(
-                                imageVector = MiuixIcons.Close,
-                                contentDescription = "Exit Batch",
-                                tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                modifier = Modifier.size(22.dp)
+                            BatchActionButton(
+                                icon = MiuixIcons.Delete,
+                                label = "删除",
+                                tint = MiuixTheme.colorScheme.error,
+                                onClick = {
+                                    if (selectedSongIds.isEmpty()) {
+                                        Platform.toast.show("请先选择歌曲")
+                                    } else {
+                                        activeMenuSong = null
+                                        showDeleteConfirmDialog = true
+                                    }
+                                },
+                                modifier = Modifier.weight(1f)
                             )
                         }
                     }
                 }
             }
         },
-        floatingToolbarPosition = ToolbarPosition.BottomEnd,
+        floatingToolbarPosition = ToolbarPosition.BottomCenter,
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
         Box(Modifier.fillMaxSize().padding(innerPadding)) {
@@ -317,7 +381,7 @@ fun MusicListScreen(
                                     }
                                     if (isBatchMode) {
                                         item {
-                                            Spacer(Modifier.height(88.dp))
+                                            Spacer(Modifier.height(132.dp))
                                         }
                                     }
                                 }
@@ -419,7 +483,7 @@ fun MusicListScreen(
                             }
                             if (isBatchMode) {
                                 item {
-                                    Spacer(Modifier.height(88.dp))
+                                    Spacer(Modifier.height(132.dp))
                                 }
                             }
                         }
@@ -575,6 +639,38 @@ fun MusicListScreen(
 }
 
 @Composable
+private fun BatchActionButton(
+    icon: ImageVector,
+    label: String,
+    tint: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .height(54.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = label,
+            color = tint,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
 fun SongItem(
     song: Song,
     currentSong: Song?,
@@ -605,7 +701,17 @@ fun SongItem(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
         ) {
-            if (isBatchMode) {
+            AnimatedVisibility(
+                visible = isBatchMode,
+                enter = expandHorizontally(
+                    animationSpec = tween(220),
+                    expandFrom = androidx.compose.ui.Alignment.Start
+                ) + fadeIn(tween(160)),
+                exit = shrinkHorizontally(
+                    animationSpec = tween(180),
+                    shrinkTowards = androidx.compose.ui.Alignment.Start
+                ) + fadeOut(tween(120))
+            ) {
                 Checkbox(
                     state = androidx.compose.ui.state.ToggleableState(isSelected),
                     onClick = { onSelectedChange(!isSelected) },
@@ -736,5 +842,3 @@ private fun getPlaylistIconColor(playlistId: String, primaryColor: Color): Color
     val index = kotlin.math.abs(playlistId.hashCode()) % MorandiColors.size
     return MorandiColors[index]
 }
-
-
