@@ -9,6 +9,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,6 +35,7 @@ import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import utils.BackHandler
 import utils.Platform
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 import data.MusicRepository
 
@@ -53,7 +56,7 @@ fun PlaylistScreen(
     val playlistSongs by remember(selectedPlaylist) {
         if (selectedPlaylist == null) kotlinx.coroutines.flow.flowOf(emptyList()) 
         else repository.getSongsInPlaylist(selectedPlaylist!!.id)
-    }.collectAsState(initial = emptyList())
+    }.collectAsState(initial = null)
 
     // UI 控制状态
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -123,7 +126,8 @@ fun PlaylistScreen(
         floatingToolbar = {
             if (selectedPlaylist != null && isBatchMode) {
                 FloatingToolbar(
-                    cornerRadius = 16.dp
+                    cornerRadius = 16.dp,
+                    modifier = Modifier.padding(bottom = 160.dp)
                 ) {
                     Column(
                         modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
@@ -204,73 +208,88 @@ fun PlaylistScreen(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
         Box(Modifier.fillMaxSize().padding(innerPadding)) {
-            if (selectedPlaylist == null) {
-                // 显示收藏夹列表
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(playlists) { playlist ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onPlaylistClick(playlist) }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
+            AnimatedContent(
+                targetState = selectedPlaylist,
+                transitionSpec = {
+                    if (targetState != null && initialState == null) {
+                        (slideInHorizontally { width -> width } + fadeIn(animationSpec = tween(300))) togetherWith
+                                (slideOutHorizontally { width -> -width / 3 } + fadeOut(animationSpec = tween(300)))
+                    } else {
+                        (slideInHorizontally { width -> -width / 3 } + fadeIn(animationSpec = tween(300))) togetherWith
+                                (slideOutHorizontally { width -> width } + fadeOut(animationSpec = tween(300)))
+                    }
+                },
+                label = "playlist_transition"
+            ) { currentPlaylist ->
+                if (currentPlaylist == null) {
+                    // 显示收藏夹列表
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(playlists) { playlist ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .clickable { onPlaylistClick(playlist) }
                             ) {
-                                // 图标区分：默认用心，其他用歌单标识
-                                val iconColor = getPlaylistIconColor(playlist.id, MiuixTheme.colorScheme.primary)
-                                Icon(
-                                    imageVector = MiuixIcons.Favorites,
-                                    contentDescription = null,
-                                    tint = iconColor,
-                                    modifier = Modifier.size(32.dp)
-                                )
-                                
-                                Spacer(Modifier.width(16.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(playlist.name, style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Medium))
-                                    Text(
-                                        "${playlist.songCount} 首歌曲" + if (playlist.isDefault == 1) " · 默认" else "",
-                                        style = TextStyle(fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                                    )
-                                }
-
-                                if (playlist.id == "default") {
+                                Row(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // 图标区分：默认用心，其他用歌单标识
+                                    val iconColor = getPlaylistIconColor(playlist.id, MiuixTheme.colorScheme.primary)
                                     Icon(
-                                        imageVector = MiuixIcons.ChevronForward,
+                                        imageVector = MiuixIcons.Favorites,
                                         contentDescription = null,
-                                        tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                        tint = iconColor,
+                                        modifier = Modifier.size(32.dp)
                                     )
-                                } else {
-                                    Box {
-                                        IconButton(onClick = { activeMenuPlaylistId = playlist.id }) {
-                                            Icon(
-                                                imageVector = MiuixIcons.More,
-                                                contentDescription = "操作",
-                                                tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                                            )
-                                        }
-                                        
-                                        WindowListPopup(
-                                            show = activeMenuPlaylistId == playlist.id,
-                                            alignment = PopupPositionProvider.Align.End,
-                                            onDismissRequest = { activeMenuPlaylistId = null }
-                                        ) {
-                                            ListPopupColumn {
-                                                DropdownImpl(
-                                                    text = "删除歌单",
-                                                    optionSize = 1,
-                                                    isSelected = false,
-                                                    onSelectedIndexChange = {
-                                                        activeMenuPlaylistId = null
-                                                        playlistToDelete = playlist
-                                                    },
-                                                    index = 0
+                                    
+                                    Spacer(Modifier.width(16.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(playlist.name, style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Medium))
+                                        Text(
+                                            "${playlist.songCount} 首歌曲" + if (playlist.isDefault == 1) " · 默认" else "",
+                                            style = TextStyle(fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                                        )
+                                    }
+
+                                    if (playlist.id == "default") {
+                                        Icon(
+                                            imageVector = MiuixIcons.ChevronForward,
+                                            contentDescription = null,
+                                            tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                        )
+                                    } else {
+                                        Box {
+                                            IconButton(onClick = { activeMenuPlaylistId = playlist.id }) {
+                                                Icon(
+                                                    imageVector = MiuixIcons.More,
+                                                    contentDescription = "操作",
+                                                    tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                                                 )
+                                            }
+                                            
+                                            WindowListPopup(
+                                                show = activeMenuPlaylistId == playlist.id,
+                                                alignment = PopupPositionProvider.Align.End,
+                                                onDismissRequest = { activeMenuPlaylistId = null }
+                                            ) {
+                                                ListPopupColumn {
+                                                    DropdownImpl(
+                                                        text = "删除歌单",
+                                                        optionSize = 1,
+                                                        isSelected = false,
+                                                        onSelectedIndexChange = {
+                                                            activeMenuPlaylistId = null
+                                                            playlistToDelete = playlist
+                                                        },
+                                                        index = 0
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -278,65 +297,77 @@ fun PlaylistScreen(
                             }
                         }
                     }
-                }
-            } else {
-                // 显示歌单内歌曲列表
-                if (playlistSongs.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("暂无歌曲，快去添加吧")
-                    }
                 } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(playlistSongs) { song ->
-                            SongItem(
-                                song = song,
-                                isBatchMode = isBatchMode,
-                                isSelected = selectedSongIds.contains(song.id),
-                                onSelectedChange = { checked ->
-                                    selectedSongIds = if (checked) selectedSongIds + song.id else selectedSongIds - song.id
-                                },
-                                onClick = {
-                                    if (Platform.playerController.playlist.value != playlistSongs) {
-                                        Platform.playerController.setPlaylist(playlistSongs)
-                                    }
-                                    Platform.playerController.play(song)
-                                },
-                                showRemoveOption = true,
-                                onRemoveClick = {
-                                    selectedPlaylist?.let { playlist ->
+                    // 显示歌单内歌曲列表
+                    val songs = playlistSongs
+                    if (songs == null) {
+                        var showLoadingIndicator by remember(currentPlaylist.id) { mutableStateOf(false) }
+                        LaunchedEffect(currentPlaylist.id) {
+                            delay(300) // 延迟 300 毫秒，常规速度不渲染任何指示器防止闪烁
+                            showLoadingIndicator = true
+                        }
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            if (showLoadingIndicator) {
+                                InfiniteProgressIndicator(
+                                    modifier = Modifier.size(36.dp)
+                                )
+                            }
+                        }
+                    } else if (songs.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("暂无歌曲，快去添加吧")
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(songs) { song ->
+                                SongItem(
+                                    song = song,
+                                    isBatchMode = isBatchMode,
+                                    isSelected = selectedSongIds.contains(song.id),
+                                    onSelectedChange = { checked ->
+                                        selectedSongIds = if (checked) selectedSongIds + song.id else selectedSongIds - song.id
+                                    },
+                                    onClick = {
+                                        if (Platform.playerController.playlist.value != songs) {
+                                            Platform.playerController.setPlaylist(songs)
+                                        }
+                                        Platform.playerController.play(song)
+                                    },
+                                    showRemoveOption = true,
+                                    onRemoveClick = {
                                         coroutineScope.launch {
                                             try {
-                                                repository.removeSongFromPlaylist(song.id, playlist.id)
+                                                repository.removeSongFromPlaylist(song.id, currentPlaylist.id)
                                                 Platform.toast.show("已从当前歌单移出")
                                             } catch (e: Exception) {
                                                 Platform.toast.show("移出失败")
                                             }
                                         }
+                                    },
+                                    onAddToOtherClick = {
+                                        activeMenuSong = song
+                                        selectPlaylistMode = "add"
+                                        showSelectPlaylistDialog = true
+                                    },
+                                    onMoveToOtherClick = {
+                                        activeMenuSong = song
+                                        selectPlaylistMode = "move"
+                                        showSelectPlaylistDialog = true
+                                    },
+                                    onBatchManageClick = {
+                                        isBatchMode = true
+                                        selectedSongIds = setOf(song.id)
                                     }
-                                },
-                                onAddToOtherClick = {
-                                    activeMenuSong = song
-                                    selectPlaylistMode = "add"
-                                    showSelectPlaylistDialog = true
-                                },
-                                onMoveToOtherClick = {
-                                    activeMenuSong = song
-                                    selectPlaylistMode = "move"
-                                    showSelectPlaylistDialog = true
-                                },
-                                onBatchManageClick = {
-                                    isBatchMode = true
-                                    selectedSongIds = setOf(song.id)
+                                )
+                            }
+                            if (isBatchMode) {
+                                item {
+                                    Spacer(Modifier.height(88.dp))
                                 }
-                            )
-                        }
-                        if (isBatchMode) {
-                            item {
-                                Spacer(Modifier.height(88.dp))
                             }
                         }
                     }
@@ -605,6 +636,7 @@ fun SongItem(
                     ) {
                         ListPopupColumn {
                             val options = mutableListOf<String>()
+                            options.add("下一首播放")
                             if (showRemoveOption) {
                                 options.add("从当前歌单移出")
                             }
@@ -622,6 +654,10 @@ fun SongItem(
                                     onSelectedIndexChange = {
                                         showMenu = false
                                         when (text) {
+                                            "下一首播放" -> {
+                                                Platform.playerController.insertNext(song)
+                                                Platform.toast.show("已设为下一首播放")
+                                            }
                                             "从当前歌单移出" -> onRemoveClick()
                                             "添加到其它歌单" -> onAddToOtherClick()
                                             "移动至其它歌单" -> onMoveToOtherClick()

@@ -9,7 +9,7 @@ import androidx.core.app.NotificationCompat
 class AndroidNotificationHelper : NotificationHelper {
     companion object {
         private const val CHANNEL_ID = "download_channel"
-        private const val CHANNEL_NAME = "Download Progress"
+        private const val CHANNEL_NAME = "下载进度"
     }
     
     private var context: Context? = null

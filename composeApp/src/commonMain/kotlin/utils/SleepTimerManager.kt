@@ -23,6 +23,9 @@ object SleepTimerManager {
         val totalSeconds = minutes * 60
         _remainingSeconds.value = totalSeconds
 
+        // 同步注册系统级硬件闹钟（Doze 休眠防杀守护）
+        Platform.playerController.setPlatformAlarm(minutes)
+
         timerJob = scope.launch {
             var current = totalSeconds
             while (current > 0) {
@@ -31,10 +34,10 @@ object SleepTimerManager {
                 _remainingSeconds.value = current
             }
             
-            // 时间倒计时到零，触发暂停
+            // 时间倒计时到零，触发停止服务自毁
             try {
-                Platform.playerController.pause()
-                Platform.toast.show("定时关闭已生效，播放已暂停")
+                Platform.playerController.stopService()
+                Platform.toast.show("定时关闭已生效，已暂停播放并注销服务")
             } catch (e: Throwable) {
                 e.printStackTrace()
             }
@@ -49,6 +52,12 @@ object SleepTimerManager {
         timerJob?.cancel()
         _remainingSeconds.value = seconds
 
+        // 分钟级对齐设置底层闹钟
+        val minutes = (seconds + 59) / 60
+        if (minutes > 0) {
+            Platform.playerController.setPlatformAlarm(minutes)
+        }
+
         timerJob = scope.launch {
             var current = seconds
             while (current > 0) {
@@ -58,8 +67,8 @@ object SleepTimerManager {
             }
             
             try {
-                Platform.playerController.pause()
-                Platform.toast.show("定时关闭已生效，播放已暂停")
+                Platform.playerController.stopService()
+                Platform.toast.show("定时关闭已生效，已暂停播放并注销服务")
             } catch (e: Throwable) {
                 e.printStackTrace()
             }
@@ -74,5 +83,7 @@ object SleepTimerManager {
         timerJob?.cancel()
         timerJob = null
         _remainingSeconds.value = null
+        // 取消系统闹钟
+        Platform.playerController.cancelPlatformAlarm()
     }
 }

@@ -107,6 +107,14 @@ class AndroidAppConfig : AppConfig {
         getPrefs().edit { putBoolean("show_lyrics_in_notification", show) }
     }
 
+    override fun getDynamicColor(): Boolean {
+        return getPrefs().getBoolean("dynamic_color", true)
+    }
+
+    override fun setDynamicColor(enable: Boolean) {
+        getPrefs().edit { putBoolean("dynamic_color", enable) }
+    }
+
     override fun getStorageType(): Int {
         return getPrefs().getInt("app_storage_type", 0)
     }

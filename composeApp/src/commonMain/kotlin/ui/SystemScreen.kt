@@ -41,17 +41,6 @@ fun SystemScreen(modifier: Modifier = Modifier) {
     var isInitialLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
-    // 旋转动画 (使用 InfiniteTransition 确保循环)
-    val infiniteTransition = rememberInfiniteTransition(label = "refresh_infinite")
-    val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "refresh_rotation"
-    )
 
     val loadStatus = suspend {
         try {
@@ -88,38 +77,37 @@ fun SystemScreen(modifier: Modifier = Modifier) {
         topBar = {
             TopAppBar(
                 title = "系统设置",
-                scrollBehavior = scrollBehavior,
-                actions = {
-                    IconButton(
-                        onClick = {
-                            if (!isRefreshing) {
-                                coroutineScope.launch {
-                                    GlobalState.triggerRefresh()
-                                }
-                            }
-                        },
-                        modifier = Modifier.padding(end = 16.dp)
-                    ) {
-                        Icon(
-                            imageVector = MiuixIcons.Refresh,
-                            contentDescription = "刷新",
-                            modifier = Modifier.graphicsLayer { 
-                                if (isRefreshing) rotationZ = rotation 
-                            }
-                        )
-                    }
-                }
+                scrollBehavior = scrollBehavior
             )
         },
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(scrollState)
-                .padding(bottom = 24.dp)
+        val pullToRefreshState = rememberPullToRefreshState()
+        
+        PullToRefresh(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                isRefreshing = true
+                coroutineScope.launch {
+                    GlobalState.triggerRefresh()
+                }
+            },
+            pullToRefreshState = pullToRefreshState,
+            topAppBarScrollBehavior = scrollBehavior,
+            refreshTexts = listOf(
+                "下拉刷新",
+                "松开刷新",
+                "正在刷新",
+                "刷新成功"
+            ),
+            modifier = Modifier.padding(innerPadding)
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .padding(bottom = 24.dp)
+            ) {
             // 版本檢查卡片 (Updater 风格)
 
             SmallTitle(text = "服务状态", modifier = Modifier.padding(start = 8.dp, top = 16.dp, bottom = 8.dp))
@@ -230,6 +218,7 @@ fun SystemScreen(modifier: Modifier = Modifier) {
                     }
                 )
             }
+        }
         }
     }
 }

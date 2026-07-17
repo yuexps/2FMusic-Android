@@ -121,7 +121,8 @@ fun MusicListScreen(
         floatingToolbar = {
             if (isBatchMode) {
                 FloatingToolbar(
-                    cornerRadius = 16.dp
+                    cornerRadius = 16.dp,
+                    modifier = Modifier.padding(bottom = 160.dp)
                 ) {
                     Column(
                         modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
@@ -296,14 +297,8 @@ fun MusicListScreen(
                                                 Platform.playerController.play(song)
                                             },
                                             onAddToQueueClick = {
-                                                val currentPlaylist = Platform.playerController.playlist.value.toMutableList()
-                                                if (!currentPlaylist.any { it.id == song.id }) {
-                                                    currentPlaylist.add(song)
-                                                    Platform.playerController.setPlaylist(currentPlaylist)
-                                                    Platform.toast.show("已添加至队列")
-                                                } else {
-                                                    Platform.toast.show("歌曲已在队列中")
-                                                }
+                                                Platform.playerController.insertNext(song)
+                                                Platform.toast.show("已设为下一首播放")
                                             },
                                             onAddToPlaylistClick = {
                                                 activeMenuSong = song
@@ -398,14 +393,8 @@ fun MusicListScreen(
                                         Platform.playerController.play(song)
                                     },
                                     onAddToQueueClick = {
-                                        val currentPlaylist = Platform.playerController.playlist.value.toMutableList()
-                                        if (!currentPlaylist.any { it.id == song.id }) {
-                                            currentPlaylist.add(song)
-                                            Platform.playerController.setPlaylist(currentPlaylist)
-                                            Platform.toast.show("已添加至队列")
-                                        } else {
-                                            Platform.toast.show("歌曲已在队列中")
-                                        }
+                                        Platform.playerController.insertNext(song)
+                                        Platform.toast.show("已设为下一首播放")
                                     },
                                     onAddToPlaylistClick = {
                                         activeMenuSong = song
@@ -683,7 +672,7 @@ fun SongItem(
                                 index = 0
                             )
                             DropdownImpl(
-                                text = "添加至队列",
+                                text = "下一首播放",
                                 optionSize = 4,
                                 isSelected = false,
                                 onSelectedIndexChange = {

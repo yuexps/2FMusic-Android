@@ -36,6 +36,8 @@ import utils.LrcLine
 import utils.LrcParser
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.rememberScrollState
@@ -55,8 +57,8 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
@@ -66,6 +68,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.FastOutSlowInEasing
+import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
+import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.textureBlur
+import top.yukonga.miuix.kmp.shader.isRuntimeShaderSupported
 import utils.Platform
 
 import data.MusicRepository
@@ -76,6 +82,10 @@ fun PlayerScreen(
     onClose: () -> Unit,
     repository: MusicRepository
 ) {
+    val supportBlur = remember { isRuntimeShaderSupported() }
+    val isDark = isSystemInDarkTheme()
+    val bgBackdrop = if (supportBlur) rememberLayerBackdrop() else null
+
     val currentSong by Platform.playerController.currentSong.collectAsState()
     val playbackState by Platform.playerController.playbackState.collectAsState()
     val playMode by Platform.playerController.playMode.collectAsState()
@@ -92,17 +102,49 @@ fun PlayerScreen(
     val favoriteIds by GlobalState.favoriteIds.collectAsState()
     val isFavorite = currentSong?.let { favoriteIds.contains(it.id) } ?: false
 
-    // 下滑关闭相关状态
-    val offsetY = remember { Animatable(0f) }
+    // 下滑关闭与滑入滑出相关状态
     val density = LocalDensity.current
+    val screenHeightPx = remember(density) { with(density) { 1000.dp.toPx() } }
+    val offsetY = remember { Animatable(screenHeightPx) } // 初始在屏幕最底部
     val dismissThreshold = with(density) { 150.dp.toPx() }
+    
+    // 每次进入页面时启动从底部滑升进入的动画，并保障挂载位置正确
+    LaunchedEffect(Unit) {
+        offsetY.animateTo(
+            targetValue = 0f,
+            animationSpec = androidx.compose.animation.core.tween(
+                durationMillis = 300,
+                easing = androidx.compose.animation.core.FastOutSlowInEasing
+            )
+        )
+    }
+
+    // 统一下滑/退出关闭的动画处理
+    val handleDismiss: () -> Unit = {
+        scope.launch {
+            offsetY.animateTo(
+                targetValue = screenHeightPx,
+                animationSpec = androidx.compose.animation.core.tween(
+                    durationMillis = 280,
+                    easing = androidx.compose.animation.core.FastOutSlowInEasing
+                )
+            )
+            onClose()
+        }
+    }
     val showDeleteDialog = remember { mutableStateOf(false) }
     val showDetailsDialog = remember { mutableStateOf(false) }
     var lyricFontSize by remember { mutableFloatStateOf(Platform.config.getLyricFontSize()) }
     var lyricTranslationMode by remember { mutableIntStateOf(Platform.config.getLyricTranslationMode()) }
     var showLyricsInNotification by remember { mutableStateOf(Platform.config.getShowLyricsInNotification()) }
+    var isDynamicColorEnabled by remember { mutableStateOf(Platform.config.getDynamicColor()) }
     var showSongActions by remember { mutableStateOf(false) }
-    val remainingSecondsState by utils.SleepTimerManager.remainingSeconds.collectAsState()
+    var currentPalette by remember { mutableStateOf<MiuixPalette?>(null) }
+
+
+    val isTimerActive by remember {
+        utils.SleepTimerManager.remainingSeconds.map { it != null }.distinctUntilChanged()
+    }.collectAsState(initial = false)
     var showSleepTimerSettings by remember { mutableStateOf(false) }
     var showEqualizerSettings by remember { mutableStateOf(false) }
     var isEqualizerEnabled by remember { mutableStateOf(Platform.playerController.isEqualizerEnabled()) }
@@ -141,6 +183,18 @@ fun PlayerScreen(
         }
     }
 
+    val albumArtUrl = utils.CoverUtil.getCoverUrl(currentSong)
+
+    LaunchedEffect(albumArtUrl) {
+        if (albumArtUrl != null) {
+            utils.Platform.coverColorExtractor?.invoke(albumArtUrl) { extractedColor ->
+                currentPalette = pickPaletteForColor(extractedColor)
+            }
+        } else {
+            currentPalette = null
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -150,7 +204,7 @@ fun PlayerScreen(
                 detectVerticalDragGestures(
                     onDragEnd = {
                         if (offsetY.value > dismissThreshold) {
-                            onClose()
+                            handleDismiss()
                         } else {
                             scope.launch { offsetY.animateTo(0f) }
                         }
@@ -167,6 +221,62 @@ fun PlayerScreen(
                 )
             }
     ) {
+        // 1. 动态取色背景层 (支持与不支持模糊的底层 fallback 渐变，始终渲染防止硬质露底)
+        val bgColors = if (isDynamicColorEnabled && currentPalette != null) {
+            val palette = currentPalette!!
+            if (isDark) {
+                listOf(palette.darkBackground, Color.Black)
+            } else {
+                listOf(palette.lightBackground, Color.White)
+            }
+        } else {
+            if (isDark) {
+                listOf(Color(0xFF1F1F24), Color(0xFF0F0F12)) // 黑曜石暗色莫兰迪渐变
+            } else {
+                listOf(Color(0xFFF2F4F7), Color(0xFFE4E7EB)) // 优雅的浅灰莫兰迪渐变
+            }
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Brush.verticalGradient(bgColors))
+        )
+
+        // 2. 硬件级毛玻璃层 (高级高斯模糊)
+        if (supportBlur && isDynamicColorEnabled && bgBackdrop != null && albumArtUrl != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .layerBackdrop(bgBackdrop)
+            ) {
+                com.seiko.imageloader.ui.AutoSizeImage(
+                    url = albumArtUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .textureBlur(
+                        backdrop = bgBackdrop,
+                        shape = RoundedCornerShape(0.dp),
+                        colors = top.yukonga.miuix.kmp.blur.BlurDefaults.blurColors(
+                            blendColors = listOf(
+                                top.yukonga.miuix.kmp.blur.BlendColorEntry(
+                                    color = if (isDark) Color.Black.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.35f),
+                                    mode = top.yukonga.miuix.kmp.blur.BlurBlendMode.SrcOver
+                                )
+                            ),
+                            brightness = if (isDark) -0.05f else 0.02f,
+                            contrast = 1.0f,
+                            saturation = 1.3f
+                        )
+                    )
+            )
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -193,7 +303,7 @@ fun PlayerScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // 收起按钮
-                IconButton(onClick = onClose) {
+                IconButton(onClick = handleDismiss) {
                     Icon(
                         imageVector = MiuixIcons.ExpandLess,
                         contentDescription = "Close",
@@ -320,7 +430,7 @@ fun PlayerScreen(
                             )
                         ),
                         DropdownItem(
-                            text = "歌词显示",
+                            text = "通知歌词",
                             children = listOf(
                                 DropdownItem(
                                     text = "开启",
@@ -338,6 +448,27 @@ fun PlayerScreen(
                                         showLyricsInNotification = false
                                         Platform.config.setShowLyricsInNotification(false)
                                         Platform.playerController.updateLyricsMetadata()
+                                    }
+                                )
+                            )
+                        ),
+                        DropdownItem(
+                            text = "动态取色",
+                            children = listOf(
+                                DropdownItem(
+                                    text = "开启",
+                                    selected = isDynamicColorEnabled,
+                                    onClick = {
+                                        isDynamicColorEnabled = true
+                                        Platform.config.setDynamicColor(true)
+                                    }
+                                ),
+                                DropdownItem(
+                                    text = "关闭",
+                                    selected = !isDynamicColorEnabled,
+                                    onClick = {
+                                        isDynamicColorEnabled = false
+                                        Platform.config.setDynamicColor(false)
                                     }
                                 )
                             )
@@ -476,7 +607,7 @@ fun PlayerScreen(
                             imageVector = MiuixIcons.Demibold.Favorites,
                             contentDescription = "Favorite",
                             modifier = Modifier.size(26.dp),
-                            tint = if (isFavorite) Color.Red else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.25f)
+                            tint = if (isFavorite) Color(0xFFEF5350) else (if (isDark) Color.White.copy(alpha = 0.6f) else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                         )
                     }
                 }
@@ -489,13 +620,12 @@ fun PlayerScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val isTimerActive = remainingSecondsState != null
                     IconButton(onClick = { showSleepTimerSettings = true }) {
                         Icon(
                             imageVector = MiuixIcons.Alarm,
                             contentDescription = "Timer",
                             modifier = Modifier.size(22.dp),
-                            tint = if (isTimerActive) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            tint = if (isTimerActive) MiuixTheme.colorScheme.primary else (if (isDark) Color.White.copy(alpha = 0.65f) else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.65f))
                         )
                     }
 
@@ -506,7 +636,7 @@ fun PlayerScreen(
                             imageVector = MiuixIcons.Tune,
                             contentDescription = "Sound Effect",
                             modifier = Modifier.size(22.dp),
-                            tint = if (isEqualizerEnabled) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            tint = if (isEqualizerEnabled) MiuixTheme.colorScheme.primary else (if (isDark) Color.White.copy(alpha = 0.65f) else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.65f))
                         )
                     }
                     IconButton(onClick = {
@@ -528,11 +658,16 @@ fun PlayerScreen(
                             imageVector = if (isDownloaded) MiuixIcons.Folder else MiuixIcons.Download, 
                             contentDescription = "Download", 
                             modifier = Modifier.size(22.dp), 
-                            tint = if (isDownloaded) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            tint = if (isDownloaded) MiuixTheme.colorScheme.primary else (if (isDark) Color.White.copy(alpha = 0.65f) else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.65f))
                         )
                     }
                     IconButton(onClick = { showSongActions = true }) {
-                        Icon(imageVector = MiuixIcons.More, contentDescription = "More", modifier = Modifier.size(22.dp), tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                        Icon(
+                            imageVector = MiuixIcons.More, 
+                            contentDescription = "More", 
+                            modifier = Modifier.size(22.dp), 
+                            tint = if (isDark) Color.White.copy(alpha = 0.65f) else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                        )
                     }
                 }
 
@@ -577,105 +712,116 @@ fun PlayerScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 播放模式
-                    IconButton(onClick = {
-                        val nextMode = when (playMode) {
-                            PlayMode.LIST_LOOP -> PlayMode.SINGLE_LOOP
-                            PlayMode.SINGLE_LOOP -> PlayMode.RANDOM
-                            PlayMode.RANDOM -> PlayMode.LIST_LOOP
-                        }
-                        Platform.playerController.setPlayMode(nextMode)
-                    }) {
+                    // 播放模式 (三档：小巧点缀，细线条)
+                    IconButton(
+                        onClick = {
+                            val nextMode = when (playMode) {
+                                PlayMode.LIST_LOOP -> PlayMode.SINGLE_LOOP
+                                PlayMode.SINGLE_LOOP -> PlayMode.RANDOM
+                                PlayMode.RANDOM -> PlayMode.LIST_LOOP
+                            }
+                            Platform.playerController.setPlayMode(nextMode)
+                        },
+                        modifier = Modifier.size(42.dp)
+                    ) {
+                        val modeTint = if (isDark) Color.White.copy(alpha = 0.65f) else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.65f)
                         when (playMode) {
                             PlayMode.LIST_LOOP -> Icon(
-                                imageVector = MiuixIcons.Demibold.Replace,
+                                imageVector = MiuixIcons.Refresh, // 循环箭头回路 (无数字)
                                 contentDescription = "列表循环",
                                 modifier = Modifier.size(24.dp),
-                                tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                tint = modeTint
                             )
                             PlayMode.SINGLE_LOOP -> Box {
                                 Icon(
-                                    imageVector = MiuixIcons.Demibold.Refresh,
+                                    imageVector = MiuixIcons.Refresh, // 循环箭头回路
                                     contentDescription = "单曲循环",
                                     modifier = Modifier.size(24.dp),
-                                    tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                    tint = modeTint
                                 )
                                 Text(
                                     text = "1",
-                                    fontSize = 9.sp,
+                                    fontSize = 8.sp,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.align(Alignment.Center).offset(y = 1.dp),
-                                    color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                    modifier = Modifier.align(Alignment.Center).offset(y = 0.5.dp),
+                                    color = modeTint
                                 )
                             }
                             PlayMode.RANDOM -> Icon(
-                                imageVector = MiuixIcons.Demibold.Help,
+                                imageVector = MiuixIcons.Help, // 随机交叉回路
                                 contentDescription = "随机播放",
                                 modifier = Modifier.size(24.dp),
-                                tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                tint = modeTint
                             )
                         }
                     }
 
-                    // 上一曲 (SkipPrevious)
+                    // 上一曲
                     IconButton(
                         onClick = { Platform.playerController.previous() },
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier.size(60.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.SkipPrevious,
+                            imageVector = Icons.Rounded.SkipPrevious,
                             contentDescription = "Previous",
-                            modifier = Modifier.size(30.dp),
-                            tint = MiuixTheme.colorScheme.onSurface
+                            modifier = Modifier.size(46.dp),
+                            tint = if (isDark) Color.White.copy(alpha = 0.9f) else MiuixTheme.colorScheme.onSurface
                         )
                     }
 
-                    // 播放/暂停大白盘
-                    Box(
+                    // 播放/暂停
+                    IconButton(
+                        onClick = {
+                            if (playbackState == PlaybackState.PLAYING) Platform.playerController.pause()
+                            else if (playbackState == PlaybackState.PAUSED || playbackState == PlaybackState.IDLE) Platform.playerController.resume()
+                        },
                         modifier = Modifier
                             .size(68.dp)
-                            .clip(RoundedCornerShape(34.dp))
-                            .background(Color.White)
-                            .clickable {
-                                if (playbackState == PlaybackState.PLAYING) Platform.playerController.pause()
-                                else if (playbackState == PlaybackState.PAUSED || playbackState == PlaybackState.IDLE) Platform.playerController.resume()
-                            },
-                        contentAlignment = Alignment.Center
+                            .background(
+                                color = if (isDark) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(34.dp)
+                            )
                     ) {
                         if (playbackState == PlaybackState.BUFFERING) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(30.dp)
                             )
                         } else {
+                            val playIconOffset = if (playbackState == PlaybackState.PLAYING) 0.dp else 2.dp
                             Icon(
                                 imageVector = if (playbackState == PlaybackState.PLAYING) MiuixIcons.Demibold.Pause else MiuixIcons.Demibold.Play,
                                 contentDescription = "Play/Pause",
-                                tint = MiuixTheme.colorScheme.primary,
-                                modifier = Modifier.size(34.dp)
+                                tint = if (isDark) Color.White.copy(alpha = 0.95f) else MiuixTheme.colorScheme.onSurface,
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .offset(x = playIconOffset)
                             )
                         }
                     }
 
-                    // 下一曲 (SkipNext)
+                    // 下一曲
                     IconButton(
                         onClick = { Platform.playerController.next() },
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier.size(60.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.SkipNext,
+                            imageVector = Icons.Rounded.SkipNext,
                             contentDescription = "Next",
-                            modifier = Modifier.size(30.dp),
-                            tint = MiuixTheme.colorScheme.onSurface
+                            modifier = Modifier.size(46.dp),
+                            tint = if (isDark) Color.White.copy(alpha = 0.9f) else MiuixTheme.colorScheme.onSurface
                         )
                     }
 
                     // 播放列表按钮
-                    IconButton(onClick = { GlobalState.togglePlaylist(true) }) {
+                    IconButton(
+                        onClick = { GlobalState.togglePlaylist(true) },
+                        modifier = Modifier.size(42.dp)
+                    ) {
                         Icon(
-                            imageVector = MiuixIcons.Demibold.Playlist,
+                            imageVector = MiuixIcons.Playlist, // 细线版本
                             contentDescription = "Playlist",
                             modifier = Modifier.size(24.dp),
-                            tint = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            tint = if (isDark) Color.White.copy(alpha = 0.65f) else MiuixTheme.colorScheme.onSurface.copy(alpha = 0.65f)
                         )
                     }
                 }
@@ -967,6 +1113,7 @@ fun PlayerScreen(
                                             } else {
                                                 emptyList()
                                             }
+                                            Platform.playerController.reloadLyrics()
                                             Platform.toast.show("刮削已就绪")
                                         } else {
                                             Platform.toast.show("重新刮削触发失败")
@@ -1052,23 +1199,7 @@ fun PlayerScreen(
                 }
             }
 
-            // 2. 轮盘数值改变时，防抖 500 毫秒后自动触发开启/更新或取消
-            LaunchedEffect(selectedTimerHour, selectedTimerMinute) {
-                if (showSleepTimerSettings) {
-                    delay(500)
-                    val finalMinutes = selectedTimerHour * 60 + selectedTimerMinute
-                    val currentSeconds = utils.SleepTimerManager.remainingSeconds.value
-                    val currentMinutes = if (currentSeconds != null) (currentSeconds + 59) / 60 else 0
-                    
-                    if (finalMinutes != currentMinutes) {
-                        if (finalMinutes > 0) {
-                            utils.SleepTimerManager.startTimer(finalMinutes)
-                        } else {
-                            utils.SleepTimerManager.stopTimer()
-                        }
-                    }
-                }
-            }
+            // 2. 轮盘数值改变时的防抖自动调用已移除，现已改为点击底部按钮显式开启。
 
             Column(
                 modifier = Modifier
@@ -1079,17 +1210,21 @@ fun PlayerScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
 
-                if (remainingSecondsState != null) {
-                    val seconds = remainingSecondsState!!
-                    val min = seconds / 60
-                    val sec = seconds % 60
-                    Text(
-                        text = "正在倒计时：${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}",
-                        fontSize = 14.sp,
-                        color = MiuixTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
+                if (isTimerActive) {
+                    Box {
+                        val secondsState by utils.SleepTimerManager.remainingSeconds.collectAsState()
+                        secondsState?.let { seconds ->
+                            val min = seconds / 60
+                            val sec = seconds % 60
+                            Text(
+                                text = "正在倒计时：${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}",
+                                fontSize = 14.sp,
+                                color = MiuixTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = 16.dp)
+                            )
+                        }
+                    }
                 } else if (estimatedMinutes > 0) {
                     Text(
                         text = timeEstimateText,
@@ -1105,7 +1240,7 @@ fun PlayerScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Row(
@@ -1113,42 +1248,58 @@ fun PlayerScreen(
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            NumberPicker(
-                                value = selectedTimerHour,
-                                onValueChange = { selectedTimerHour = it },
-                                range = 0..12,
-                                label = { it.toString().padStart(2, '0') },
-                                wrapAround = true,
-                                visibleItemCount = 3,
-                                modifier = Modifier.width(60.dp)
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                NumberPicker(
+                                    value = selectedTimerHour,
+                                    onValueChange = { selectedTimerHour = it },
+                                    range = 0..12,
+                                    label = { it.toString().padStart(2, '0') },
+                                    wrapAround = true,
+                                    visibleItemCount = 3,
+                                    modifier = Modifier.width(64.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "时",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
 
-                            Spacer(modifier = Modifier.width(24.dp))
+                            Spacer(modifier = Modifier.width(48.dp))
 
-                            Text(
-                                text = ":",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                            )
-
-                            Spacer(modifier = Modifier.width(24.dp))
-
-                            NumberPicker(
-                                value = selectedTimerMinute,
-                                onValueChange = { selectedTimerMinute = it },
-                                range = 0..59,
-                                label = { it.toString().padStart(2, '0') },
-                                wrapAround = true,
-                                visibleItemCount = 3,
-                                modifier = Modifier.width(60.dp)
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                NumberPicker(
+                                    value = selectedTimerMinute,
+                                    onValueChange = { selectedTimerMinute = it },
+                                    range = 0..59,
+                                    label = { it.toString().padStart(2, '0') },
+                                    wrapAround = true,
+                                    visibleItemCount = 3,
+                                    modifier = Modifier.width(64.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "分",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
                         }
                     }
                 }
 
-                if (remainingSecondsState != null) {
-                    Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(24.dp))
+
+                if (isTimerActive) {
                     Button(
                         onClick = {
                             showSleepTimerSettings = false
@@ -1157,13 +1308,41 @@ fun PlayerScreen(
                             selectedTimerHour = 0
                             selectedTimerMinute = 0
                         },
-                        modifier = Modifier.wrapContentWidth(),
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
                         colors = ButtonDefaults.buttonColors(
                             color = Color.Red.copy(alpha = 0.1f),
                             contentColor = Color.Red
                         )
                     ) {
-                        Text("取消定时", fontWeight = FontWeight.Bold)
+                        Text("取消当前定时", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+                } else {
+                    val isEnabled = estimatedMinutes > 0
+                    Button(
+                        onClick = {
+                            utils.SleepTimerManager.startTimer(estimatedMinutes)
+                            showSleepTimerSettings = false
+                            Platform.toast.show("定时已启动")
+                        },
+                        enabled = isEnabled,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        colors = if (isEnabled) {
+                            ButtonDefaults.buttonColors(
+                                color = MiuixTheme.colorScheme.primary,
+                                contentColor = MiuixTheme.colorScheme.onPrimary
+                            )
+                        } else {
+                            ButtonDefaults.buttonColors(
+                                color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                                contentColor = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                            )
+                        }
+                    ) {
+                        Text(
+                            text = if (isEnabled) "开启定时关闭" else "请选择关闭时间",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
                     }
                 }
 
@@ -1191,9 +1370,7 @@ fun PlayerScreen(
                     listOf(
                         "原声" to listOf(0, 0, 0, 0, 0),
                         "流行" to listOf(300, 200, -100, 200, 400),
-                        "摇滚" to listOf(500, 300, -200, 400, 600),
-                        "低音" to listOf(800, 400, 0, 0, 0),
-                        "声乐" to listOf(-200, 0, 600, 300, -100)
+                        "低音" to listOf(800, 400, 0, 0, 0)
                     )
                 }
 
@@ -1331,21 +1508,52 @@ fun LyricsView(
     val isDragged by listState.interactionSource.collectIsDraggedAsState()
     var userScrolledByManual by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isDragged) {
+    // 确保回滚时能拿到倒计时结束那一刻的最新的播放行索引
+    val latestIndex by rememberUpdatedState(currentIndex)
+
+    // 当切换歌曲时，立刻重置手动滚动状态
+    LaunchedEffect(currentSong) {
+        userScrolledByManual = false
+    }
+
+    LaunchedEffect(isDragged, userScrolledByManual) {
         if (isDragged) {
             userScrolledByManual = true
         } else {
             if (userScrolledByManual) {
-                // 用户松手后，静止 5 秒自动复位
-                delay(5000)
-                userScrolledByManual = false
-                if (currentIndex >= 0) {
-                    val halfItemHeightPx = with(density) { (80.dp.toPx() / 2).toInt() }
+                // 手指抬起，静止等待 3 秒后自动复位
+                delay(3000)
+                if (latestIndex >= 0) {
+                    val currentItem = listState.layoutInfo.visibleItemsInfo.find { it.index == latestIndex }
+                    val line = lyrics.getOrNull(latestIndex)
+                    val hasTrans = line?.let { it.lines.size > 1 && translationMode != 0 } ?: false
+                    val estimatedHeight = if (hasTrans) 80.dp else 50.dp
+                    val itemHeightPx = currentItem?.size ?: with(density) { estimatedHeight.toPx().toInt() }
+                    
+                    val viewportHeightPx = listState.layoutInfo.viewportEndOffset.let { if (it > 0) it else with(density) { 500.dp.toPx().toInt() } }
+                    val centerScrollOffsetPx = (viewportHeightPx / 2) - (itemHeightPx / 2)
+                    
+                    val currentVisibleIndex = listState.firstVisibleItemIndex
+                    val distance = kotlin.math.abs(currentVisibleIndex - latestIndex)
+                    
+                    if (distance > 15) {
+                        // 距离太远，先快速跳转到距离目标 8 个 item 处，防御超长距离动画在 Compose 中引起的渲染闪烁与重置到顶部的 Bug
+                        val jumpIndex = if (latestIndex > currentVisibleIndex) {
+                            latestIndex - 8
+                        } else {
+                            latestIndex + 8
+                        }
+                        listState.scrollToItem(index = jumpIndex)
+                    }
+                    
+                    // 平滑滚动回当前行 (虚线指示器依然存在时滚动，视觉上非常连贯)
                     listState.animateScrollToItem(
-                        index = currentIndex,
-                        scrollOffset = halfItemHeightPx
+                        index = latestIndex,
+                        scrollOffset = centerScrollOffsetPx
                     )
                 }
+                // 动画完全结束后才关闭手动标志，虚线优雅消失，随后恢复自动跟随
+                userScrolledByManual = false
             }
         }
     }
@@ -1364,10 +1572,18 @@ fun LyricsView(
     // 自动跟随滚动
     LaunchedEffect(currentIndex) {
         if (!userScrolledByManual && currentIndex >= 0) {
-            val halfItemHeightPx = with(density) { (80.dp.toPx() / 2).toInt() }
+            val currentItem = listState.layoutInfo.visibleItemsInfo.find { it.index == currentIndex }
+            val line = lyrics.getOrNull(currentIndex)
+            val hasTrans = line?.let { it.lines.size > 1 && translationMode != 0 } ?: false
+            val estimatedHeight = if (hasTrans) 80.dp else 50.dp
+            val itemHeightPx = currentItem?.size ?: with(density) { estimatedHeight.toPx().toInt() }
+
+            val viewportHeightPx = listState.layoutInfo.viewportEndOffset.let { if (it > 0) it else with(density) { 500.dp.toPx().toInt() } }
+            val centerScrollOffsetPx = (viewportHeightPx / 2) - (itemHeightPx / 2)
+
             listState.animateScrollToItem(
                 index = currentIndex,
-                scrollOffset = halfItemHeightPx
+                scrollOffset = centerScrollOffsetPx
             )
         }
     }
@@ -1445,7 +1661,10 @@ fun LyricsView(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .clickable { onLineClick(line.time) }
+                                .clickable { 
+                                    userScrolledByManual = false
+                                    onLineClick(line.time) 
+                                }
                                 .heightIn(min = minHeight)
                                 .padding(vertical = 8.dp, horizontal = 32.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1629,6 +1848,66 @@ private fun getPlaylistIconColor(playlistId: String, primaryColor: Color): Color
     if (playlistId == "default") return primaryColor
     val index = kotlin.math.abs(playlistId.hashCode()) % MorandiColors.size
     return MorandiColors[index]
+}
+
+data class MiuixPalette(
+    val name: String,
+    val hue: Int,
+    val darkBackground: Color,
+    val lightBackground: Color,
+    val accent: Color,
+    val secondary: Color
+)
+
+val BUILTIN_THEME_PALETTES = listOf(
+    MiuixPalette("Sunset Bloom", 8, Color(0xFF170D0E), Color(0xFFFFF4EF), Color(0xFFFF7A59), Color(0xFFFFC4AE)),
+    MiuixPalette("Golden Hour", 42, Color(0xFF171108), Color(0xFFFFF8E7), Color(0xFFEAB308), Color(0xFFFCD34D)),
+    MiuixPalette("Forest Echo", 145, Color(0xFF09140F), Color(0xFFEEFBF3), Color(0xFF22C55E), Color(0xFF86EFAC)),
+    MiuixPalette("Ocean Mist", 190, Color(0xFF08141A), Color(0xFFEBFBFF), Color(0xFF06B6D4), Color(0xFF67E8F9)),
+    MiuixPalette("Twilight Signal", 228, Color(0xFF0C1020), Color(0xFFEEF2FF), Color(0xFF6366F1), Color(0xFFA5B4FC)),
+    MiuixPalette("Rose Vinyl", 338, Color(0xFF180D13), Color(0xFFFFF1F5), Color(0xFFF43F5E), Color(0xFFFDA4AF))
+)
+
+fun getHueFromColor(color: Color): Int {
+    val r = color.red
+    val g = color.green
+    val b = color.blue
+    val max = maxOf(r, g, b)
+    val min = minOf(r, g, b)
+    val delta = max - min
+    if (delta == 0f) return 220
+    
+    var hue = 0f
+    if (max == r) {
+        hue = ((g - b) / delta) % 6f
+    } else if (max == g) {
+        hue = (b - r) / delta + 2f
+    } else {
+        hue = (r - g) / delta + 4f
+    }
+    
+    return ((hue * 60f + 360f) % 360f).toInt()
+}
+
+fun getHueDistance(a: Int, b: Int): Int {
+    val distance = kotlin.math.abs(a - b)
+    return minOf(distance, 360 - distance)
+}
+
+fun pickPaletteForColor(color: Color): MiuixPalette {
+    val hue = getHueFromColor(color)
+    var bestPalette = BUILTIN_THEME_PALETTES[0]
+    var minDistance = 360
+    
+    for (candidate in BUILTIN_THEME_PALETTES) {
+        val distance = getHueDistance(hue, candidate.hue)
+        if (distance < minDistance) {
+            minDistance = distance
+            bestPalette = candidate
+        }
+    }
+    
+    return bestPalette
 }
 
 

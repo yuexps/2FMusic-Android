@@ -36,6 +36,8 @@ kotlin {
                 implementation(libs.miuix.ui)
                 implementation(libs.miuix.icons)
                 implementation(libs.miuix.preference)
+                implementation(libs.miuix.blur)
+                implementation(libs.miuix.navigation3.ui)
                 implementation(libs.haze)
                 
                 // Ktor & Serialization

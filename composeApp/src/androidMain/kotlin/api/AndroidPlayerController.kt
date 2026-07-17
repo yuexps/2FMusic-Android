@@ -16,13 +16,14 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import utils.Platform
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import model.PlayMode
 import model.PlaybackState
 import model.Song
 import utils.CoverUtil
 import androidx.core.net.toUri
+import api.GlobalState
+import androidx.media3.common.HeartRating
 
 @androidx.media3.common.util.UnstableApi
 object AndroidPlayerController : BasePlayerController() {
@@ -37,6 +38,7 @@ object AndroidPlayerController : BasePlayerController() {
     private var currentLyricsList: List<utils.LrcLine> = emptyList()
     private var lastPostedLyricText: String? = null
     private var lastPostedLyricArtist: String? = null
+    private var lyricsJob: Job? = null
 
     fun initialize(context: Context) {
         if (isInitialized) return
@@ -106,19 +108,46 @@ object AndroidPlayerController : BasePlayerController() {
 
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                         val songId = mediaItem?.mediaId
-                        val song = _currentPlaylist.find { it.id == songId }
-                        currentSong.value = song
-                        val index = _currentPlaylist.indexOfFirst { it.id == songId }
+                        val oldSongId = currentSong.value?.id
+                        
+                        val index = player.currentMediaItemIndex
                         currentIndex.value = index
+                        val song = _currentPlaylist.getOrNull(index)
+                        currentSong.value = song
 
-                        lastPostedLyricText = null
-                        lastPostedLyricArtist = null
-                        currentLyricsList = emptyList()
-                        song?.let { s ->
-                            scope.launch(Dispatchers.IO) {
-                                val localLrc = utils.FileStore.readLyrics(s.id)
-                                if (localLrc != null) {
-                                    currentLyricsList = utils.LrcParser.parse(localLrc, s.title)
+                        if (oldSongId != songId) {
+                            lastPostedLyricText = null
+                            lastPostedLyricArtist = null
+                            currentLyricsList = emptyList()
+                            
+                            lyricsJob?.cancel() // 取消之前的歌词加载/下载协程，避免旧歌任务覆盖新歌歌词
+                            song?.let { s ->
+                                lyricsJob = scope.launch(Dispatchers.Main) {
+                                    // 1. 尝试从本地加载已缓存的歌词
+                                    val localLrc = withContext(Dispatchers.IO) {
+                                        utils.FileStore.readLyrics(s.id)
+                                    }
+                                    if (localLrc != null) {
+                                        currentLyricsList = utils.LrcParser.parse(localLrc, s.title)
+                                        updateLyricsMetadata()
+                                    }
+                                    
+                                    // 2. 后台异步确保下载/补完最新歌词
+                                    try {
+                                        Platform.repository.ensureLyricsDownloaded(s)
+                                        // 3. 下载完成后，如果先前本地未成功加载，则重新读取加载并刷新元数据
+                                        if (currentLyricsList.isEmpty()) {
+                                            val newLrc = withContext(Dispatchers.IO) {
+                                                utils.FileStore.readLyrics(s.id)
+                                            }
+                                            if (newLrc != null) {
+                                                currentLyricsList = utils.LrcParser.parse(newLrc, s.title)
+                                                updateLyricsMetadata()
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        Platform.logger.e("Audio", "自动下载/更新歌词失败: ${e.message}")
+                                    }
                                 }
                             }
                         }
@@ -163,6 +192,34 @@ object AndroidPlayerController : BasePlayerController() {
         restoreState()
 
         isInitialized = true
+
+        // 监控全局收藏集合变更，同步将点赞状态刷给系统播控中心 (Android 13+ / HyperOS)
+        scope.launch {
+            GlobalState.favoriteIds.collect { favoriteIds ->
+                try {
+                    val currentItem = _player?.currentMediaItem
+                    if (currentItem != null) {
+                        val isFav = favoriteIds.contains(currentItem.mediaId)
+                        val rating = currentItem.mediaMetadata.userRating
+                        val isCurrentlyFav = (rating as? HeartRating)?.isHeart ?: false
+                        if (isFav != isCurrentlyFav) {
+                            val newMetadata = currentItem.mediaMetadata.buildUpon()
+                                .setUserRating(HeartRating(isFav))
+                                .build()
+                            val newMediaItem = currentItem.buildUpon()
+                                .setMediaMetadata(newMetadata)
+                                .build()
+                            val idx = _player?.currentMediaItemIndex ?: -1
+                            if (idx != -1) {
+                                _player?.replaceMediaItem(idx, newMediaItem)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
     }
 
     private var _currentPlaylist: List<Song> = emptyList()
@@ -204,12 +261,14 @@ object AndroidPlayerController : BasePlayerController() {
         
         val albumArtUrl = CoverUtil.getCoverUrl(song)
 
+        val isFavorite = api.GlobalState.favoriteIds.value.contains(song.id)
         val metadata = MediaMetadata.Builder()
             .setTitle(song.title ?: song.filename)
             .setArtist(song.artist ?: "未知艺术家")
             .setAlbumTitle(song.album ?: "")
             .setArtworkUri(albumArtUrl?.toUri())
             .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+            .setUserRating(androidx.media3.common.HeartRating(isFavorite))
             .build()
             
         return MediaItem.Builder()
@@ -286,33 +345,43 @@ object AndroidPlayerController : BasePlayerController() {
     }
 
     override fun next() {
-        Platform.logger.i("Player", "next() 被调用。hasNext=${player.hasNextMediaItem()}, 列表大小=${_currentPlaylist.size}")
-        if (player.hasNextMediaItem()) {
-            player.seekToNext()
-        } else if (_currentPlaylist.isNotEmpty()) {
-            // 列表结尾, 循环回第一首
-            Platform.logger.i("Player", "next() 循环回到索引 0")
-            player.seekTo(0, 0)
+        Platform.logger.i("Player", "next() 被调用。playMode=${playMode.value}, 列表大小=${_currentPlaylist.size}")
+        if (_currentPlaylist.isEmpty()) return
+        
+        if (playMode.value == PlayMode.SINGLE_LOOP) {
+            val nextIndex = (currentIndex.value + 1) % _currentPlaylist.size
+            playAtIndex(nextIndex)
+        } else {
+            if (player.hasNextMediaItem()) {
+                player.seekToNext()
+            } else {
+                player.seekTo(0, 0)
+            }
+            ensurePrepared()
+            player.play()
+            updateService()
+            saveState()
         }
-        ensurePrepared()
-        player.play() // 显式调用播放
-        updateService()
-        saveState()
     }
 
     override fun previous() {
-        Platform.logger.i("Player", "previous() 被调用。hasPrevious=${player.hasPreviousMediaItem()}, 列表大小=${_currentPlaylist.size}")
-        if (player.hasPreviousMediaItem()) {
-            player.seekToPrevious()
-        } else if (_currentPlaylist.isNotEmpty()) {
-            // 列表开头, 循环到最后一首
-            Platform.logger.i("Player", "previous() 循环到索引 ${_currentPlaylist.size - 1}")
-            player.seekTo(_currentPlaylist.size - 1, 0)
+        Platform.logger.i("Player", "previous() 被调用。playMode=${playMode.value}, 列表大小=${_currentPlaylist.size}")
+        if (_currentPlaylist.isEmpty()) return
+        
+        if (playMode.value == PlayMode.SINGLE_LOOP) {
+            val prevIndex = if (currentIndex.value - 1 < 0) _currentPlaylist.size - 1 else currentIndex.value - 1
+            playAtIndex(prevIndex)
+        } else {
+            if (player.hasPreviousMediaItem()) {
+                player.seekToPrevious()
+            } else {
+                player.seekTo(_currentPlaylist.size - 1, 0)
+            }
+            ensurePrepared()
+            player.play()
+            updateService()
+            saveState()
         }
-        ensurePrepared()
-        player.play() // 显式调用播放
-        updateService()
-        saveState()
     }
 
     override fun seekTo(position: Long) {
@@ -493,6 +562,85 @@ object AndroidPlayerController : BasePlayerController() {
         }
     }
 
+    override fun reloadLyrics() {
+        val song = currentSong.value ?: return
+        lyricsJob?.cancel()
+        lyricsJob = scope.launch(Dispatchers.Main) {
+            val localLrc = withContext(Dispatchers.IO) {
+                utils.FileStore.readLyrics(song.id)
+            }
+            currentLyricsList = if (localLrc != null) {
+                utils.LrcParser.parse(localLrc, song.title)
+            } else {
+                emptyList()
+            }
+            updateLyricsMetadata()
+        }
+    }
+
+    override fun clearPlaylist() {
+        Platform.logger.i("Player", "clearPlaylist() 被调用，清空所有播放媒体项。")
+        _currentPlaylist = emptyList()
+        playlist.value = emptyList()
+        player.clearMediaItems()
+        currentSong.value = null
+        currentIndex.value = -1
+        saveState()
+    }
+
+    override fun removeAtIndex(index: Int) {
+        Platform.logger.i("Player", "removeAtIndex(index = $index) 被调用。")
+        if (index in _currentPlaylist.indices) {
+            val mutable = _currentPlaylist.toMutableList()
+            mutable.removeAt(index)
+            _currentPlaylist = mutable
+            playlist.value = mutable
+            player.removeMediaItem(index)
+            
+            if (mutable.isEmpty()) {
+                currentSong.value = null
+                currentIndex.value = -1
+            } else {
+                val currentIdx = player.currentMediaItemIndex
+                currentIndex.value = currentIdx
+                currentSong.value = mutable.getOrNull(currentIdx)
+            }
+            saveState()
+        }
+    }
+
+    override fun insertNext(song: Song) {
+        Platform.logger.i("Player", "insertNext(song = ${song.title}) 被调用。")
+        val mutable = _currentPlaylist.toMutableList()
+        val existingIndex = mutable.indexOfFirst { it.id == song.id }
+        val currentIdx = currentIndex.value
+        
+        if (existingIndex != -1) {
+            if (existingIndex == currentIdx) {
+                Platform.logger.i("Player", "目标歌曲正在播放中，不执行插队操作。")
+                return
+            }
+            
+            mutable.removeAt(existingIndex)
+            player.removeMediaItem(existingIndex)
+            
+            val insertPos = if (existingIndex < currentIdx) currentIdx else currentIdx + 1
+            val targetPos = if (insertPos in 0..mutable.size) insertPos else mutable.size
+            
+            mutable.add(targetPos, song)
+            player.addMediaItem(targetPos, createMediaItem(song))
+        } else {
+            val targetPos = if (currentIdx + 1 in 0..mutable.size) currentIdx + 1 else mutable.size
+            mutable.add(targetPos, song)
+            player.addMediaItem(targetPos, createMediaItem(song))
+        }
+        
+        _currentPlaylist = mutable
+        playlist.value = mutable
+        currentIndex.value = player.currentMediaItemIndex
+        saveState()
+    }
+
     // 均衡器成员
     private var equalizer: android.media.audiofx.Equalizer? = null
     private var eqEnabled = false
@@ -589,6 +737,46 @@ object AndroidPlayerController : BasePlayerController() {
             "预计将在 $hourStr:$minuteStr 关闭播放 (${minutes} 分钟后)"
         } catch (e: Exception) {
             "${minutes} 分钟后关闭播放"
+        }
+    }
+
+    override fun stopService() {
+        val context = appContext ?: return
+        Platform.logger.i("Player", "stopService() 被调用，发送 ACTION_STOP。")
+        try {
+            val intent = Intent(context, Class.forName("top.msfxp.music.PlayerService")).apply {
+                action = "top.msfxp.music.ACTION_STOP"
+            }
+            context.startService(intent)
+        } catch (e: Exception) {
+            Platform.logger.e("Player", "stopService() 发送 Intent 失败: ${e.message}")
+        }
+    }
+
+    override fun setPlatformAlarm(minutes: Int) {
+        val context = appContext ?: return
+        Platform.logger.i("Player", "setPlatformAlarm(minutes = $minutes) 被调用，发送 ACTION_SET_ALARM。")
+        try {
+            val intent = Intent(context, Class.forName("top.msfxp.music.PlayerService")).apply {
+                action = "top.msfxp.music.ACTION_SET_ALARM"
+                putExtra("extra_alarm_minutes", minutes)
+            }
+            context.startService(intent)
+        } catch (e: Exception) {
+            Platform.logger.e("Player", "setPlatformAlarm() 发送 Intent 失败: ${e.message}")
+        }
+    }
+
+    override fun cancelPlatformAlarm() {
+        val context = appContext ?: return
+        Platform.logger.i("Player", "cancelPlatformAlarm() 被调用，发送 ACTION_CANCEL_ALARM。")
+        try {
+            val intent = Intent(context, Class.forName("top.msfxp.music.PlayerService")).apply {
+                action = "top.msfxp.music.ACTION_CANCEL_ALARM"
+            }
+            context.startService(intent)
+        } catch (e: Exception) {
+            Platform.logger.e("Player", "cancelPlatformAlarm() 发送 Intent 失败: ${e.message}")
         }
     }
 }
