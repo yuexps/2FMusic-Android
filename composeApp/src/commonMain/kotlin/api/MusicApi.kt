@@ -4,6 +4,7 @@ import io.ktor.client.call.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
+import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.client.plugins.websocket.*
@@ -17,6 +18,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 import model.*
+import utils.FileStore
 import utils.Platform
 import utils.getTimeMillis
 
@@ -328,6 +330,24 @@ class MusicApi {
         return response.body()
     }
 
+    suspend fun downloadFileAsStream(url: String, fileName: String, onProgress: ((bytesSentTotal: Long, contentLength: Long) -> Unit)? = null) {
+        val fullUrl = if (url.startsWith("http")) url else "$baseUrl$url"
+        client.prepareGet(fullUrl) {
+            timeout {
+                requestTimeoutMillis = 300000
+                connectTimeoutMillis = 15000
+                socketTimeoutMillis = 60000
+            }
+        }.execute { response ->
+            if (response.status != HttpStatusCode.OK) {
+                throw Exception("下载失败: HTTP ${response.status.value}")
+            }
+            val channel: io.ktor.utils.io.ByteReadChannel = response.body()
+            val contentLength = response.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: 0L
+            utils.FileStore.saveFromChannel(fileName, channel, contentLength, onProgress)
+        }
+    }
+
     // 统一代理请求到共享连接管道
     private suspend inline fun <reified T> sendRequest(action: String, data: JsonElement = JsonObject(emptyMap())): T? {
         return sendRequestShared<T>(action, data)
@@ -368,6 +388,9 @@ class MusicApi {
         private val pendingMutex = Mutex()
         private val pendingRequests = mutableMapOf<String, CompletableDeferred<WsResponse>>()
         private var seqCounter = 0L
+
+        private val apiScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        private var reconnectJob: Job? = null
 
         private var wsBaseUrlUsed: String? = null
         private var wsHashUsed: String? = null
@@ -466,6 +489,7 @@ class MusicApi {
                         }
                     }
                 } catch (e: Exception) {
+                    if (e is CancellationException) throw e
                     Platform.logger.e("MusicApi", "WebSocket incoming loop error", e)
                 } finally {
                     pendingMutex.withLock {
@@ -478,15 +502,7 @@ class MusicApi {
 
                     if (wsSession == session) {
                         wsSession = null
-                        scope.launch {
-                            delay(5000)
-                            Platform.logger.i("MusicApi", "Attempting automatic WebSocket reconnection...")
-                            try {
-                                getOrConnectWs()
-                            } catch (e: Exception) {
-                                Platform.logger.e("MusicApi", "Automatic reconnection failed", e)
-                            }
-                        }
+                        triggerReconnect()
                     }
                 }
             }
@@ -500,7 +516,35 @@ class MusicApi {
                         session.send(Frame.Text(json.encodeToString(pingReq)))
                     }
                 } catch (e: Exception) {
+                    if (e is CancellationException) throw e
                     Platform.logger.e("MusicApi", "WebSocket heartbeat error", e)
+                }
+            }
+        }
+
+        private fun triggerReconnect() {
+            if (reconnectJob?.isActive == true) return
+            reconnectJob = apiScope.launch {
+                var attempt = 0
+                while (true) {
+                    val currentBaseUrl = Platform.config.getBaseUrl()
+                    val currentHash = Platform.config.getPasswordHash()
+                    val session = wsSession
+                    if (session != null && session.isActive && wsBaseUrlUsed == currentBaseUrl && wsHashUsed == currentHash) {
+                        break
+                    }
+                    attempt++
+                    val delayMs = kotlin.math.min(30000L, 2000L * attempt)
+                    Platform.logger.i("MusicApi", "将在 ${delayMs / 1000} 秒后尝试自动重连 WebSocket (第 $attempt 次)...")
+                    delay(delayMs)
+                    try {
+                        getOrConnectWs()
+                        Platform.logger.i("MusicApi", "自动重连 WebSocket 成功！")
+                        break
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+                        Platform.logger.e("MusicApi", "第 $attempt 次自动重连失败: ${e.message}")
+                    }
                 }
             }
         }

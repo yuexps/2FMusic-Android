@@ -28,6 +28,10 @@ object Platform {
     // 封面图主色调提取器，由 Android 平台启动时进行赋值实现
     var coverColorExtractor: ((String, (androidx.compose.ui.graphics.Color) -> Unit) -> Unit)? = null
 
+    // 存储权限相关的桥接回调，由平台端（如 Android MainActivity）实现
+    var hasStoragePermission: (() -> Boolean)? = null
+    var requestStoragePermission: (() -> Unit)? = null
+
     /**
      * 获取当前系统时间戳（毫秒）
      */

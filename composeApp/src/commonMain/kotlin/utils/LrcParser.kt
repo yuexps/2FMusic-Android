@@ -6,6 +6,9 @@ data class LrcLine(
 )
 
 object LrcParser {
+    private val timeRegex = """\[(\d+):(\d+)(?:\.(\d+))?\]""".toRegex()
+    private val tagRegex = Regex("""\[(id|ar|ti|by|hash|al|sign|qq|total|offset|length|re|ve):.*?\]""", RegexOption.IGNORE_CASE)
+
     fun parse(lrcText: String, title: String? = null): List<LrcLine> {
         val displayTitle = if (title != null) " [$title]" else ""
         Platform.logger.i("LrcParser", "开始解析歌词$displayTitle, 长度: ${lrcText.length}")
@@ -13,15 +16,13 @@ object LrcParser {
         val lines = lrcText.split("\n")
         // 使用 Map 收集同一时间戳的所有歌词行
         val timeMap = mutableMapOf<Long, MutableList<String>>()
-        // 支持 [mm:ss.xx] 和 [mm:ss] 两种格式
-        val timeRegex = """\[(\d+):(\d+)(?:\.(\d+))?\]""".toRegex()
 
         for (line in lines) {
             val trimmedLine = line.trim()
             if (trimmedLine.isEmpty()) continue
             
             // 跳过元数据标签
-            if (trimmedLine.matches(Regex("""\[(id|ar|ti|by|hash|al|sign|qq|total|offset|length|re|ve):.*?\]""", RegexOption.IGNORE_CASE))) {
+            if (trimmedLine.matches(tagRegex)) {
                 continue
             }
 

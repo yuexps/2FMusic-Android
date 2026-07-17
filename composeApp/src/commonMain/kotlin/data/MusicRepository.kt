@@ -30,4 +30,8 @@ interface MusicRepository {
     fun downloadMusic(song: Song): DownloadResult
     suspend fun deleteLocalAudio(songId: String)
     suspend fun clearMetadata(song: Song)
+    suspend fun scanAndSyncLocalFiles()
+    fun getPlayHistory(): Flow<List<Song>>
+    suspend fun removeHistory(songId: String, playTime: Long)
+    suspend fun clearHistory()
 }

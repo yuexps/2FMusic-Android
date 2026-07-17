@@ -954,10 +954,16 @@ fun PlayerScreen(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                DetailItem(label = "ID", value = currentSong?.id ?: "未知")
                 DetailItem(label = "歌名", value = currentSong?.title ?: "未知")
                 DetailItem(label = "歌手", value = currentSong?.artist ?: "未知")
                 DetailItem(label = "专辑", value = currentSong?.album ?: "未知")
                 DetailItem(label = "文件名", value = currentSong?.filename ?: "未知")
+                
+                val localPath = currentSong?.localAudioPath?.let { path ->
+                    utils.FileStore.getLocalPath(path)
+                }
+                DetailItem(label = "本地路径", value = localPath ?: "未下载（仅在线）")
 
                 Spacer(modifier = Modifier.height(10.dp))
 
@@ -1508,6 +1514,16 @@ fun LyricsView(
     val isDragged by listState.interactionSource.collectIsDraggedAsState()
     var userScrolledByManual by remember { mutableStateOf(false) }
 
+    // 预分配 Canvas 羽化边缘渐变色数组，杜绝在每一帧绘制中动态 zip 和 toTypedArray 产生的 GC 内存开销
+    val fadeColorStops = remember {
+        arrayOf(
+            0.0f to Color.Transparent,
+            0.08f to Color.Black,
+            0.92f to Color.Black,
+            1.0f to Color.Transparent
+        )
+    }
+
     // 确保回滚时能拿到倒计时结束那一刻的最新的播放行索引
     val latestIndex by rememberUpdatedState(currentIndex)
 
@@ -1558,13 +1574,17 @@ fun LyricsView(
         }
     }
 
-    // 计算当前处于视口中央的歌词项索引
+    // 只有在手动滚动交互中才进行视口中央歌词行的搜索计算，自动跟随滚动时短路跳过，大幅节减滑动时的 CPU 负荷
     val centerItemIndex by remember {
         derivedStateOf {
-            val items = listState.layoutInfo.visibleItemsInfo
-            if (items.isEmpty()) 0 else {
-                val viewportCenter = listState.layoutInfo.viewportEndOffset / 2
-                items.minByOrNull { kotlin.math.abs((it.offset + it.size / 2) - viewportCenter) }?.index ?: 0
+            if (!userScrolledByManual) {
+                0
+            } else {
+                val items = listState.layoutInfo.visibleItemsInfo
+                if (items.isEmpty()) 0 else {
+                    val viewportCenter = listState.layoutInfo.viewportEndOffset / 2
+                    items.minByOrNull { kotlin.math.abs((it.offset + it.size / 2) - viewportCenter) }?.index ?: 0
+                }
             }
         }
     }
@@ -1623,16 +1643,9 @@ fun LyricsView(
                         .graphicsLayer { alpha = 0.99f }
                         .drawWithContent {
                             drawContent()
-                            val colors = listOf(
-                                Color.Transparent,
-                                Color.Black,
-                                Color.Black,
-                                Color.Transparent
-                            )
-                            val stops = listOf(0.0f, 0.08f, 0.92f, 1.0f)
                             drawRect(
                                 brush = Brush.verticalGradient(
-                                    colorStops = stops.zip(colors).toTypedArray(),
+                                    colorStops = fadeColorStops,
                                     startY = 0f,
                                     endY = size.height
                                 ),
@@ -1643,93 +1656,16 @@ fun LyricsView(
                     contentPadding = PaddingValues(vertical = maxHeight / 2)
                 ) {
                     itemsIndexed(lyrics, key = { index, _ -> index }) { index, line ->
-                        val isActive = index == currentIndex
-
-                        val scale by animateFloatAsState(
-                            targetValue = if (isActive) 1.1f else 1f,
-                            animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
-                        )
-                        val alpha by animateFloatAsState(
-                            targetValue = if (isActive) 1f else 0.45f,
-                            animationSpec = tween(durationMillis = 400)
-                        )
-
-                        val hasTrans = line.lines.size > 1 && translationMode != 0
-                        val minHeight = if (hasTrans) 80.dp else 50.dp
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable {
-                                    userScrolledByManual = false
-                                    onLineClick(line.time)
-                                }
-                                .heightIn(min = minHeight)
-                                .padding(vertical = 8.dp, horizontal = 32.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .graphicsLayer {
-                                        this.alpha = alpha
-                                        this.scaleX = scale
-                                        this.scaleY = scale
-                                        this.transformOrigin = TransformOrigin(0f, 0.5f)
-                                    },
-                                horizontalAlignment = Alignment.Start,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                line.lines.forEachIndexed { lineIndex, text ->
-                                    if (lineIndex > 0 && translationMode == 0) return@forEachIndexed
-
-                                    val isMainLine = lineIndex == 0
-                                    val content = @Composable {
-                                        val textColor by animateColorAsState(
-                                            targetValue = if (isMainLine) {
-                                                if (isActive) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantActions
-                                            } else {
-                                                if (isActive) MiuixTheme.colorScheme.onSurfaceVariantActions else MiuixTheme.colorScheme.onSurfaceVariantActions.copy(alpha = 0.4f)
-                                            },
-                                            animationSpec = tween(durationMillis = 400)
-                                        )
-
-                                        Text(
-                                            text = text,
-                                            fontSize = if (isMainLine) fontSizeSp.sp else (fontSizeSp * 0.75f).sp,
-                                            fontWeight = if (isActive && isMainLine) FontWeight.Bold else FontWeight.Normal,
-                                            color = textColor,
-                                            textAlign = TextAlign.Start
-                                        )
-                                    }
-
-                                    if (isMainLine) {
-                                        content()
-                                    } else {
-                                        if (translationMode == 1) {
-                                            AnimatedVisibility(
-                                                visible = isActive,
-                                                enter = fadeIn() + expandVertically(),
-                                                exit = fadeOut() + shrinkVertically()
-                                            ) {
-                                                Column {
-                                                    Spacer(modifier = Modifier.height(4.dp))
-                                                    content()
-                                                }
-                                            }
-                                        } else if (translationMode == 2) {
-                                            Column {
-                                                Spacer(modifier = Modifier.height(4.dp))
-                                                content()
-                                            }
-                                        }
-                                    }
-                                }
+                        LrcLineItem(
+                            line = line,
+                            isActive = index == currentIndex,
+                            translationMode = translationMode,
+                            fontSizeSp = fontSizeSp,
+                            onClick = {
+                                userScrolledByManual = false
+                                onLineClick(line.time)
                             }
-
-                        }
+                        )
                     }
                 }
                 if (userScrolledByManual) {
@@ -1810,8 +1746,10 @@ fun formatTime(ms: Long): String {
     return "${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
 }
 
+@Suppress("DEPRECATION")
 @Composable
 fun DetailItem(label: String, value: String) {
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1827,7 +1765,18 @@ fun DetailItem(label: String, value: String) {
             text = value,
             fontSize = 14.sp,
             color = MiuixTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(3.5f),
+            style = androidx.compose.ui.text.TextStyle(
+                lineBreak = androidx.compose.ui.text.style.LineBreak.Heading
+            ),
+            modifier = Modifier
+                .weight(3.5f)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(value))
+                    utils.Platform.toast.show("已复制: $label")
+                },
             textAlign = TextAlign.End
         )
     }
@@ -1908,6 +1857,106 @@ fun pickPaletteForColor(color: Color): MiuixPalette {
     }
 
     return bestPalette
+}
+
+@Composable
+private fun LrcLineItem(
+    line: LrcLine,
+    isActive: Boolean,
+    translationMode: Int,
+    fontSizeSp: Float,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val scale by animateFloatAsState(
+        targetValue = if (isActive) 1.1f else 1f,
+        animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (isActive) 1f else 0.45f,
+        animationSpec = tween(durationMillis = 400)
+    )
+
+    val hasTrans = line.lines.size > 1 && translationMode != 0
+    val minHeight = if (hasTrans) 80.dp else 50.dp
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onClick() }
+            .heightIn(min = minHeight)
+            .padding(vertical = 8.dp, horizontal = 32.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .graphicsLayer {
+                    this.alpha = alpha
+                    this.scaleX = scale
+                    this.scaleY = scale
+                    this.transformOrigin = TransformOrigin(0f, 0.5f)
+                },
+            horizontalAlignment = Alignment.Start,
+            verticalArrangement = Arrangement.Center
+        ) {
+            line.lines.forEachIndexed { lineIndex, text ->
+                if (lineIndex > 0 && translationMode == 0) return@forEachIndexed
+
+                val isMainLine = lineIndex == 0
+                val textColor by animateColorAsState(
+                    targetValue = if (isMainLine) {
+                        if (isActive) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantActions
+                    } else {
+                        if (isActive) MiuixTheme.colorScheme.onSurfaceVariantActions else MiuixTheme.colorScheme.onSurfaceVariantActions.copy(alpha = 0.4f)
+                    },
+                    animationSpec = tween(durationMillis = 400)
+                )
+
+                if (isMainLine) {
+                    Text(
+                        text = text,
+                        fontSize = fontSizeSp.sp,
+                        fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                        color = textColor,
+                        textAlign = TextAlign.Start
+                    )
+                } else {
+                    if (translationMode == 1) {
+                        AnimatedVisibility(
+                            visible = isActive,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
+                        ) {
+                            Column {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = text,
+                                    fontSize = (fontSizeSp * 0.75f).sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = textColor,
+                                    textAlign = TextAlign.Start
+                                )
+                            }
+                        }
+                    } else if (translationMode == 2) {
+                        Column {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = text,
+                                  fontSize = (fontSizeSp * 0.75f).sp,
+                                  fontWeight = FontWeight.Normal,
+                                  color = textColor,
+                                  textAlign = TextAlign.Start
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 

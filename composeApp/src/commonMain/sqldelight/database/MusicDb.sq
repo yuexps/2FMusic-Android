@@ -131,3 +131,8 @@ DELETE FROM PlaylistSong WHERE playlistId = ? AND songId = ?;
 
 removeAllSongsFromPlaylist:
 DELETE FROM PlaylistSong WHERE playlistId = ?;
+
+-- 获取所有歌曲ID和本地文件路径 (用于差分物理清理与内存优化)
+getAllSongPaths:
+SELECT id, localAudioPath, localCoverPath, localLyricsPath FROM SongEntity;
+

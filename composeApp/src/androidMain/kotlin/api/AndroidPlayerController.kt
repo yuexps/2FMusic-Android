@@ -110,44 +110,47 @@ object AndroidPlayerController : BasePlayerController() {
                         val songId = mediaItem?.mediaId
                         val oldSongId = currentSong.value?.id
 
+                        // 过滤由于更新动态歌词元数据而触发的 redundant transition，避免引起下游 UI 重组
+                        if (oldSongId == songId && songId != null) {
+                            return
+                        }
+
                         val index = player.currentMediaItemIndex
                         currentIndex.value = index
                         val song = _currentPlaylist.getOrNull(index)
                         currentSong.value = song
 
-                        if (oldSongId != songId) {
-                            lastPostedLyricText = null
-                            lastPostedLyricArtist = null
-                            currentLyricsList = emptyList()
+                        lastPostedLyricText = null
+                        lastPostedLyricArtist = null
+                        currentLyricsList = emptyList()
 
-                            lyricsJob?.cancel() // 取消之前的歌词加载/下载协程，避免旧歌任务覆盖新歌歌词
-                            song?.let { s ->
-                                lyricsJob = scope.launch(Dispatchers.Main) {
-                                    // 1. 尝试从本地加载已缓存的歌词
-                                    val localLrc = withContext(Dispatchers.IO) {
-                                        utils.FileStore.readLyrics(s.id)
-                                    }
-                                    if (localLrc != null) {
-                                        currentLyricsList = utils.LrcParser.parse(localLrc, s.title)
-                                        updateLyricsMetadata()
-                                    }
+                        lyricsJob?.cancel() // 取消之前的歌词加载/下载协程，避免旧歌任务覆盖新歌歌词
+                        song?.let { s ->
+                            lyricsJob = scope.launch(Dispatchers.Main) {
+                                // 1. 尝试从本地加载已缓存的歌词
+                                val localLrc = withContext(Dispatchers.IO) {
+                                    utils.FileStore.readLyrics(s.id)
+                                }
+                                if (localLrc != null) {
+                                    currentLyricsList = utils.LrcParser.parse(localLrc, s.title)
+                                    updateLyricsMetadata()
+                                }
 
-                                    // 2. 后台异步确保下载/补完最新歌词
-                                    try {
-                                        Platform.repository.ensureLyricsDownloaded(s)
-                                        // 3. 下载完成后，如果先前本地未成功加载，则重新读取加载并刷新元数据
-                                        if (currentLyricsList.isEmpty()) {
-                                            val newLrc = withContext(Dispatchers.IO) {
-                                                utils.FileStore.readLyrics(s.id)
-                                            }
-                                            if (newLrc != null) {
-                                                currentLyricsList = utils.LrcParser.parse(newLrc, s.title)
-                                                updateLyricsMetadata()
-                                            }
+                                // 2. 后台异步确保下载/补完最新歌词
+                                try {
+                                    Platform.repository.ensureLyricsDownloaded(s)
+                                    // 3. 下载完成后，如果先前本地未成功加载，则重新读取加载并刷新元数据
+                                    if (currentLyricsList.isEmpty()) {
+                                        val newLrc = withContext(Dispatchers.IO) {
+                                            utils.FileStore.readLyrics(s.id)
                                         }
-                                    } catch (e: Exception) {
-                                        Platform.logger.e("Audio", "自动下载/更新歌词失败: ${e.message}")
+                                        if (newLrc != null) {
+                                            currentLyricsList = utils.LrcParser.parse(newLrc, s.title)
+                                            updateLyricsMetadata()
+                                        }
                                     }
+                                } catch (e: Exception) {
+                                    Platform.logger.e("Audio", "自动下载/更新歌词失败: ${e.message}")
                                 }
                             }
                         }

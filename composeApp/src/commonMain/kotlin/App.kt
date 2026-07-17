@@ -213,6 +213,7 @@ fun App(platform: PlatformDependencies) {
                             .zIndex(if (selectedIndex == 1) 1f else 0f)
                     )
                     SystemScreen(
+                        repository = repository,
                         modifier = Modifier
                             .fillMaxSize()
                             .graphicsLayer { alpha = if (selectedIndex == 2) 1f else 0f }

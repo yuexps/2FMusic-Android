@@ -36,8 +36,6 @@ fun BottomPlayerBar(
 ) {
     val currentSong by Platform.playerController.currentSong.collectAsState()
     val playbackState by Platform.playerController.playbackState.collectAsState()
-    val progress by Platform.playerController.progress.collectAsState()
-
 
     if (currentSong == null) return
 
@@ -194,12 +192,23 @@ fun BottomPlayerBar(
         )
 
         // 进度条
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth(progress)
-                .height(2.dp)
-                .background(MiuixTheme.colorScheme.primary)
+        BottomPlayerProgressBar(
+            progressState = Platform.playerController.progress,
+            modifier = Modifier.align(Alignment.BottomStart)
         )
     }
+}
+
+@Composable
+private fun BottomPlayerProgressBar(
+    progressState: kotlinx.coroutines.flow.StateFlow<Float>,
+    modifier: Modifier = Modifier
+) {
+    val progress by progressState.collectAsState()
+    Box(
+        modifier = modifier
+            .fillMaxWidth(progress)
+            .height(2.dp)
+            .background(MiuixTheme.colorScheme.primary)
+    )
 }

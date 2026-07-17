@@ -11,7 +11,12 @@ class FMusicApplication : Application() {
 
         // 1. 实例化配置并初始化文件存储环境
         val config = config.AndroidAppConfig().apply { initialize(this@FMusicApplication) }
-        utils.FileStore.initialize(config.getStorageDirPath())
+        utils.FileStore.initialize(
+            internalPath = config.getInternalStorageDir(),
+            lyricsPath = config.getLyricsStorageDir(),
+            coverPath = config.getCoverStorageDir(),
+            audioPath = config.getAudioStorageDir()
+        )
 
         // 2. 实例化平台依赖
         val mApi = api.MusicApi()

@@ -67,3 +67,4 @@ kotlin-js-store/
 .idea/shelf/
 .idea/caches/
 .idea/assetWizardSettings.xml
+local.properties

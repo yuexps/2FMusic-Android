@@ -166,17 +166,22 @@ data class NeteaseTaskDetail(
 )
 
 @Serializable
-data class PlayHistory(
+data class PlayHistorySong(
     val id: String,
+    val filename: String? = null,
     val title: String? = null,
     val artist: String? = null,
     val album: String? = null,
     @SerialName("album_art")
     val albumArt: String? = null,
-    @SerialName("play_count")
-    val playCount: Int = 0,
-    @SerialName("last_played")
-    val lastPlayed: Long = 0L
+    val mtime: Double? = null,
+    val size: Long = 0L
+)
+
+@Serializable
+data class PlayHistory(
+    val time: Long,
+    val song: PlayHistorySong
 )
 
 @Serializable

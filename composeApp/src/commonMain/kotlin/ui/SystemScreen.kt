@@ -1,6 +1,7 @@
 package ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import utils.Platform
 import androidx.compose.foundation.rememberScrollState
@@ -8,6 +9,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.animation.core.*
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -23,16 +30,35 @@ import api.MusicApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import model.SystemStatus
+import model.Song
 import top.yukonga.miuix.kmp.basic.*
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Hide
-import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Show
+import top.yukonga.miuix.kmp.icon.extended.Settings
+import top.yukonga.miuix.kmp.icon.extended.WorldClock
+import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import com.seiko.imageloader.ui.AutoSizeImage
+import top.yukonga.miuix.kmp.window.WindowDialog
+import top.yukonga.miuix.kmp.window.WindowListPopup
+import top.yukonga.miuix.kmp.basic.PopupPositionProvider
+import top.yukonga.miuix.kmp.basic.ListPopupColumn
+import top.yukonga.miuix.kmp.basic.DropdownImpl
+import data.MusicRepository
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import top.yukonga.miuix.kmp.icon.extended.More
+import top.yukonga.miuix.kmp.icon.extended.Back
+import androidx.activity.compose.BackHandler
 
 @Composable
-fun SystemScreen(modifier: Modifier = Modifier) {
+fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
     val api = remember { MusicApi() }
     var status by remember { mutableStateOf<SystemStatus?>(null) }
     val scrollBehavior = MiuixScrollBehavior()
@@ -41,6 +67,24 @@ fun SystemScreen(modifier: Modifier = Modifier) {
     var isInitialLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
+
+    var showConfigDialog by remember { mutableStateOf(false) }
+    var baseUrl by remember { mutableStateOf(Platform.config.getBaseUrl()) }
+    var password by remember { mutableStateOf(Platform.config.getPassword() ?: "") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var showSuccess by remember { mutableStateOf(false) }
+
+    var isHistoryOpen by remember { mutableStateOf(false) }
+    var historyRefreshTrigger by remember { mutableStateOf(0) }
+    val historySongs by remember(historyRefreshTrigger) {
+        repository.getPlayHistory()
+    }.collectAsState(initial = emptyList())
+
+    val currentPlayingSong by Platform.playerController.currentSong.collectAsState(initial = null)
+
+    BackHandler(enabled = isHistoryOpen) {
+        isHistoryOpen = false
+    }
 
     val loadStatus = suspend {
         try {
@@ -76,164 +120,321 @@ fun SystemScreen(modifier: Modifier = Modifier) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = "系统设置",
-                scrollBehavior = scrollBehavior
+                title = if (isHistoryOpen) "播放历史" else "系统设置",
+                scrollBehavior = scrollBehavior,
+                navigationIcon = {
+                    if (isHistoryOpen) {
+                        IconButton(
+                            onClick = { isHistoryOpen = false },
+                            modifier = Modifier.padding(start = 16.dp)
+                        ) {
+                            Icon(
+                                imageVector = MiuixIcons.Back,
+                                contentDescription = "返回"
+                            )
+                        }
+                    }
+                },
+                actions = {
+                    if (isHistoryOpen && historySongs.isNotEmpty()) {
+                        var showClearConfirm by remember { mutableStateOf(false) }
+                        IconButton(
+                            onClick = { showClearConfirm = true },
+                            modifier = Modifier.padding(end = 16.dp)
+                        ) {
+                            Icon(
+                                imageVector = MiuixIcons.Delete,
+                                contentDescription = "清空历史"
+                            )
+                        }
+
+                        if (showClearConfirm) {
+                            WindowDialog(
+                                title = "清空历史",
+                                show = showClearConfirm,
+                                onDismissRequest = { showClearConfirm = false }
+                            ) {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Text("确定要清空全部播放历史记录吗？", fontSize = 16.sp)
+                                    Spacer(Modifier.height(20.dp))
+                                    Row(
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        TextButton(
+                                            text = "取消",
+                                            onClick = { showClearConfirm = false },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Spacer(Modifier.width(12.dp))
+                                        TextButton(
+                                            text = "清空",
+                                            onClick = {
+                                                showClearConfirm = false
+                                                coroutineScope.launch {
+                                                    try {
+                                                        repository.clearHistory()
+                                                        historyRefreshTrigger++
+                                                        Platform.toast.show("已清空播放历史")
+                                                    } catch (e: Exception) {
+                                                        Platform.toast.show("清空失败")
+                                                    }
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            colors = ButtonDefaults.textButtonColorsPrimary()
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             )
         },
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
-        val pullToRefreshState = rememberPullToRefreshState()
-
-        PullToRefresh(
-            isRefreshing = isRefreshing,
-            onRefresh = {
-                isRefreshing = true
-                coroutineScope.launch {
-                    GlobalState.triggerRefresh()
+        AnimatedContent(
+            targetState = isHistoryOpen,
+            transitionSpec = {
+                if (targetState) {
+                    (slideInHorizontally { width -> width } + fadeIn(animationSpec = tween(300))) togetherWith
+                            (slideOutHorizontally { width -> -width / 3 } + fadeOut(animationSpec = tween(300)))
+                } else {
+                    (slideInHorizontally { width -> -width / 3 } + fadeIn(animationSpec = tween(300))) togetherWith
+                            (slideOutHorizontally { width -> width } + fadeOut(animationSpec = tween(300)))
                 }
             },
-            pullToRefreshState = pullToRefreshState,
-            topAppBarScrollBehavior = scrollBehavior,
-            refreshTexts = listOf(
-                "下拉刷新",
-                "松开刷新",
-                "正在刷新",
-                "刷新成功"
-            ),
+            label = "history_page_transition",
             modifier = Modifier.padding(innerPadding)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(scrollState)
-                    .padding(bottom = 24.dp)
-            ) {
-            // 版本檢查卡片 (Updater 风格)
+        ) { historyOpen ->
+            if (!historyOpen) {
+                val pullToRefreshState = rememberPullToRefreshState()
 
-            SmallTitle(text = "服务状态", modifier = Modifier.padding(start = 8.dp, top = 16.dp, bottom = 8.dp))
-
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            ) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    if (status != null) {
-                        status?.let { s ->
-                            StatusRow("后端状态", "已连接")
-                            StatusRow("音乐数量", s.musicCount.toString())
-                            StatusRow("歌单数量", s.playlistCount.toString())
-                        }
-                    } else if (isInitialLoading) {
-                        Text("正在连接服务器...", color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f), modifier = Modifier.padding(vertical = 8.dp))
-                    } else {
-                        Text(errorMessage ?: "无法连接到服务器", color = MiuixTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp))
-                    }
-                }
-            }
-
-            SmallTitle(text = "后端配置", modifier = Modifier.padding(start = 8.dp, top = 24.dp, bottom = 8.dp))
-
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    var baseUrl by remember { mutableStateOf(Platform.config.getBaseUrl()) }
-                    var password by remember { mutableStateOf(Platform.config.getPassword() ?: "") }
-                    var showSuccess by remember { mutableStateOf(false) }
-                    var passwordVisible by remember { mutableStateOf(false) }
-                    val coroutineScope = rememberCoroutineScope()
-
-                    TextField(
-                        value = baseUrl,
-                        onValueChange = { baseUrl = it },
-                        label = "服务器地址",
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(Modifier.height(12.dp))
-
-                    TextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = "访问密码（可选）",
-                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        trailingIcon = {
-                            IconButton(
-                                onClick = { passwordVisible = !passwordVisible },
-                                modifier = Modifier.padding(end = 12.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (passwordVisible) MiuixIcons.Show else MiuixIcons.Hide,
-                                    tint = if (passwordVisible) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSecondaryContainer,
-                                    contentDescription = if (passwordVisible) "隐藏密码" else "显示密码"
-                                )
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(Modifier.height(16.dp))
-
-                    Button(
-                        onClick = {
-                            Platform.config.setBaseUrl(baseUrl)
-                            Platform.config.setPassword(password.ifBlank { null })
-                            showSuccess = true
-                            // 主动触发全局刷新，使各页面重新拉取数据
+                PullToRefresh(
+                    isRefreshing = isRefreshing,
+                    onRefresh = {
+                        isRefreshing = true
+                        coroutineScope.launch {
                             GlobalState.triggerRefresh()
-                            coroutineScope.launch {
-                                delay(2000)
-                                showSuccess = false
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
+                        }
+                    },
+                    pullToRefreshState = pullToRefreshState,
+                    topAppBarScrollBehavior = scrollBehavior,
+                    refreshTexts = listOf(
+                        "下拉刷新",
+                        "松开刷新",
+                        "正在刷新",
+                        "刷新成功"
+                    ),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(scrollState)
+                            .padding(bottom = 24.dp)
                     ) {
-                        Text(if (showSuccess) "保存成功！" else "保存配置")
+                        SmallTitle(text = "服务状态", modifier = Modifier.padding(start = 8.dp, top = 16.dp, bottom = 8.dp))
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                        ) {
+                            Column {
+                                if (status != null) {
+                                    status?.let { s ->
+                                        BasicComponent(
+                                            title = "后端状态",
+                                            endActions = {
+                                                Text("已连接", color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f), fontSize = 15.sp)
+                                            }
+                                        )
+                                        BasicComponent(
+                                            title = "音乐数量",
+                                            endActions = {
+                                                Text(s.musicCount.toString(), color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f), fontSize = 15.sp)
+                                            }
+                                        )
+                                    }
+                                } else if (isInitialLoading) {
+                                    BasicComponent(
+                                        title = "后端状态",
+                                        endActions = {
+                                            Text("正在连接...", color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f), fontSize = 15.sp)
+                                        }
+                                    )
+                                } else {
+                                    BasicComponent(
+                                        title = "后端状态",
+                                        endActions = {
+                                            Text("连接失败", color = MiuixTheme.colorScheme.error, fontSize = 15.sp)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                        ) {
+                            BasicComponent(
+                                title = "配置后端",
+                                summary = "配置服务器地址和密码",
+                                startAction = {
+                                    Icon(
+                                        modifier = Modifier.padding(end = 16.dp),
+                                        imageVector = MiuixIcons.Settings,
+                                        contentDescription = "设置",
+                                        tint = MiuixTheme.colorScheme.onBackground
+                                    )
+                                },
+                                onClick = { showConfigDialog = true }
+                            )
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                        ) {
+                            BasicComponent(
+                                title = "播放历史",
+                                summary = "查看和管理您的最近播放足迹",
+                                startAction = {
+                                    Icon(
+                                        modifier = Modifier.padding(end = 16.dp),
+                                        imageVector = MiuixIcons.WorldClock,
+                                        contentDescription = "播放历史",
+                                        tint = MiuixTheme.colorScheme.onBackground
+                                    )
+                                },
+                                onClick = { isHistoryOpen = true }
+                            )
+                        }
+
+                        if (showConfigDialog) {
+                            WindowDialog(
+                                title = "后端配置",
+                                show = showConfigDialog,
+                                onDismissRequest = { showConfigDialog = false }
+                            ) {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    TextField(
+                                        value = baseUrl,
+                                        onValueChange = { baseUrl = it },
+                                        label = "服务器地址",
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+
+                                    Spacer(Modifier.height(12.dp))
+
+                                    TextField(
+                                        value = password,
+                                        onValueChange = { password = it },
+                                        label = "访问密码（可选）",
+                                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                        trailingIcon = {
+                                            IconButton(
+                                                onClick = { passwordVisible = !passwordVisible },
+                                                modifier = Modifier.padding(end = 12.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = if (passwordVisible) MiuixIcons.Show else MiuixIcons.Hide,
+                                                    tint = if (passwordVisible) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSecondaryContainer,
+                                                    contentDescription = if (passwordVisible) "隐藏密码" else "显示密码"
+                                                )
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+
+                                    Spacer(Modifier.height(20.dp))
+
+                                    Row(
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        TextButton(
+                                            text = "取消",
+                                            onClick = { showConfigDialog = false },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Spacer(Modifier.width(12.dp))
+                                        TextButton(
+                                            text = if (showSuccess) "保存成功！" else "保存",
+                                            onClick = {
+                                                Platform.config.setBaseUrl(baseUrl)
+                                                Platform.config.setPassword(password.ifBlank { null })
+                                                showSuccess = true
+                                                GlobalState.triggerRefresh()
+                                                coroutineScope.launch {
+                                                    delay(1200)
+                                                    showSuccess = false
+                                                    showConfigDialog = false
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            colors = ButtonDefaults.textButtonColorsPrimary()
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                if (historySongs.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("暂无播放记录", color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 80.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(historySongs) { song ->
+                            SongItem(
+                                song = song,
+                                isBatchMode = false,
+                                isSelected = false,
+                                onSelectedChange = {},
+                                onClick = {
+                                    if (Platform.playerController.playlist.value != historySongs) {
+                                        Platform.playerController.setPlaylist(historySongs)
+                                    }
+                                    Platform.playerController.play(song)
+                                },
+                                showRemoveOption = true,
+                                isHistory = true,
+                                onRemoveClick = {
+                                    coroutineScope.launch {
+                                        try {
+                                            repository.removeHistory(song.id, song.mtime?.toLong() ?: 0L)
+                                            historyRefreshTrigger++
+                                            Platform.toast.show("已删除历史记录")
+                                        } catch (e: Exception) {
+                                            Platform.toast.show("删除失败")
+                                        }
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             }
-
-            SmallTitle(text = "存储配置", modifier = Modifier.padding(start = 8.dp, top = 24.dp, bottom = 8.dp))
-
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            ) {
-                var storageType by remember { mutableStateOf(Platform.config.getStorageType()) }
-                val options = listOf("内部存储", "外部存储")
-
-                OverlayDropdownPreference(
-                    title = "存储位置",
-                    summary = "缓存与下载的保存目录",
-                    items = options,
-                    selectedIndex = storageType,
-                    onSelectedIndexChange = { index ->
-                        storageType = index
-                        Platform.config.setStorageType(index)
-                    }
-                )
-            }
         }
-        }
-    }
-}
-
-@Composable
-fun StatusRow(label: String, value: String, valueColor: Color? = null) {
-    val resolvedColor = valueColor ?: MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, fontSize = 16.sp)
-        Text(value, color = resolvedColor, fontSize = 14.sp)
     }
 }

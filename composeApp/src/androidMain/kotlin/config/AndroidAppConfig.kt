@@ -5,6 +5,11 @@ import android.content.SharedPreferences
 import androidx.core.content.edit
 import model.PlaybackStateData
 import kotlinx.serialization.json.Json
+import android.os.StatFs
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Dispatchers
+import utils.Platform
 
 class AndroidAppConfig : AppConfig {
     companion object {
@@ -18,25 +23,38 @@ class AndroidAppConfig : AppConfig {
     private var prefs: SharedPreferences? = null
     private var appContext: Context? = null
     private var appStorageDir: String = ""
+    private var internalStorageDir: String = ""
+    private var lyricsStorageDir: String = ""
+    private var coverStorageDir: String = ""
+    private var audioStorageDir: String = ""
 
     override fun initialize(context: Any?) {
         if (context is Context) {
             appContext = context.applicationContext
             prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            
+            val app = context.applicationContext
+            internalStorageDir = app.filesDir.absolutePath
+            
+            val extDocs = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS).absolutePath
+            val baseDocDir = "$extDocs/2FMusic"
+            
+            lyricsStorageDir = "$baseDocDir/lyrics"
+            coverStorageDir = "$baseDocDir/cover"
+            audioStorageDir = "$baseDocDir/audio"
+
             recalculateStorageDir()
         }
     }
 
     private fun recalculateStorageDir() {
-        val context = appContext ?: return
-        val type = getStorageType()
-        appStorageDir = if (type == 1) {
-            val extMusic = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MUSIC).absolutePath
-            "$extMusic/2FMusic"
-        } else {
-            context.getExternalFilesDir(null)?.absolutePath ?: context.filesDir.absolutePath
-        }
+        appStorageDir = audioStorageDir
     }
+
+    fun getInternalStorageDir(): String = internalStorageDir
+    fun getLyricsStorageDir(): String = lyricsStorageDir
+    fun getCoverStorageDir(): String = coverStorageDir
+    fun getAudioStorageDir(): String = audioStorageDir
 
     private fun getPrefs(): SharedPreferences {
         return prefs ?: throw IllegalStateException("AndroidAppConfig not initialized with Context")
@@ -113,20 +131,5 @@ class AndroidAppConfig : AppConfig {
 
     override fun setDynamicColor(enable: Boolean) {
         getPrefs().edit { putBoolean("dynamic_color", enable) }
-    }
-
-    override fun getStorageType(): Int {
-        return getPrefs().getInt("app_storage_type", 0)
-    }
-
-    override fun setStorageType(type: Int) {
-        getPrefs().edit { putInt("app_storage_type", type) }
-        recalculateStorageDir()
-        // 热更新物理数据存储路径
-        utils.FileStore.initialize(appStorageDir)
-    }
-
-    override fun getStorageDirPath(): String {
-        return appStorageDir
     }
 }
