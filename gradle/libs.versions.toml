@@ -1,19 +1,19 @@
 [versions]
 android-gradle-plugin = "9.2.1"
-androidx-activity-compose = "1.12.4"
-compose-plugin = "1.10.1"
+androidx-activity-compose = "1.13.0"
+compose-plugin = "1.11.1"
 haze = "1.7.2"
 image-loader = "1.10.0"
-kotlin = "2.3.21"
-kotlinx-coroutines = "1.10.2"
-kotlinx-serialization-json = "1.10.0"
-kotlinx-datetime = "0.7.1"
-ktor-client = "3.4.0"
-media3 = "1.9.2"
+kotlin = "2.4.10"
+kotlinx-coroutines = "1.11.0"
+kotlinx-serialization-json = "1.11.0"
+kotlinx-datetime = "0.8.0"
+ktor-client = "3.5.1"
+media3 = "1.10.1"
 miuix = "0.9.3"
 coil = "2.7.0"
-sqldelight = "2.2.1"
-okio = "3.16.4"
+sqldelight = "2.3.2"
+okio = "3.17.0"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity-compose" }
@@ -24,7 +24,6 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor-client" }
 ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor-client" }
-ktor-client-js = { module = "io.ktor:ktor-client-js", version.ref = "ktor-client" }
 ktor-client-auth = { module = "io.ktor:ktor-client-auth", version.ref = "ktor-client" }
 ktor-client-encoding = { module = "io.ktor:ktor-client-encoding", version.ref = "ktor-client" }
 ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor-client" }
@@ -36,11 +35,12 @@ media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3" }
 miuix-ui = { module = "top.yukonga.miuix.kmp:miuix-ui", version.ref = "miuix" }
 miuix-icons = { module = "top.yukonga.miuix.kmp:miuix-icons", version.ref = "miuix" }
 miuix-preference = { module = "top.yukonga.miuix.kmp:miuix-preference", version.ref = "miuix" }
+miuix-blur = { module = "top.yukonga.miuix.kmp:miuix-blur", version.ref = "miuix" }
+miuix-navigation3-ui = { module = "top.yukonga.miuix.kmp:miuix-navigation3-ui", version.ref = "miuix" }
 ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose-plugin" }
 components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "compose-plugin" }
 coil-main = { module = "io.coil-kt:coil", version.ref = "coil" }
 sqldelight-android = { module = "app.cash.sqldelight:android-driver", version.ref = "sqldelight" }
-sqldelight-web = { module = "app.cash.sqldelight:web-worker-driver", version.ref = "sqldelight" }
 sqldelight-runtime = { module = "app.cash.sqldelight:runtime", version.ref = "sqldelight" }
 sqldelight-coroutines = { module = "app.cash.sqldelight:coroutines-extensions", version.ref = "sqldelight" }
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }

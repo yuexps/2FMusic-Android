@@ -51,12 +51,12 @@ fun MusicListScreen(
     modifier: Modifier = Modifier
 ) {
     val songs by repository.getLocalSongs().collectAsState(initial = emptyList())
-    
+
     var isSyncing by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val currentSong by Platform.playerController.currentSong.collectAsState()
     val scope = rememberCoroutineScope()
-    
+
     var searchQuery by remember { mutableStateOf("") }
     var isSearchExpanded by remember { mutableStateOf(false) }
 
@@ -91,7 +91,7 @@ fun MusicListScreen(
 
     val filteredSongs = remember(songs, searchQuery) {
         if (searchQuery.isBlank()) songs
-        else songs.filter { 
+        else songs.filter {
             it.title?.contains(searchQuery, ignoreCase = true) == true ||
             it.artist?.contains(searchQuery, ignoreCase = true) == true ||
             it.filename?.contains(searchQuery, ignoreCase = true) == true
@@ -110,8 +110,8 @@ fun MusicListScreen(
                 e.message?.contains("401", ignoreCase = true) == true || e.message?.contains("unauthorized", ignoreCase = true) == true ->
                     "认证失败，请在'系统'页面配置正确的密码"
 
-                e.message?.contains("fetch", ignoreCase = true) == true || 
-                e.message?.contains("Network", ignoreCase = true) == true || 
+                e.message?.contains("fetch", ignoreCase = true) == true ||
+                e.message?.contains("Network", ignoreCase = true) == true ||
                 e.message?.contains("Connection", ignoreCase = true) == true ||
                 e.message?.contains("failed", ignoreCase = true) == true ->
                     "服务器连接失败，请检查网络连接或后端配置"
@@ -305,9 +305,9 @@ fun MusicListScreen(
                             modifier = Modifier
                                 .padding(start = 12.dp)
                                 .clickable(
-                                    interactionSource = null, 
+                                    interactionSource = null,
                                     indication = null
-                                ) { 
+                                ) {
                                     isSearchExpanded = false
                                     searchQuery = ""
                                 },
@@ -321,10 +321,10 @@ fun MusicListScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .clickable(
-                                interactionSource = null, 
+                                interactionSource = null,
                                 indication = null
-                            ) { 
-                                isSearchExpanded = false 
+                            ) {
+                                isSearchExpanded = false
                             }
                     ) {
                         if (searchQuery.isNotBlank()) {
@@ -360,14 +360,8 @@ fun MusicListScreen(
                                                 Platform.playerController.play(song)
                                             },
                                             onAddToQueueClick = {
-                                                val currentPlaylist = Platform.playerController.playlist.value.toMutableList()
-                                                if (!currentPlaylist.any { it.id == song.id }) {
-                                                    currentPlaylist.add(song)
-                                                    Platform.playerController.setPlaylist(currentPlaylist)
-                                                    Platform.toast.show("已添加至队列")
-                                                } else {
-                                                    Platform.toast.show("歌曲已在队列中")
-                                                }
+                                                Platform.playerController.insertNext(song)
+                                                Platform.toast.show("已设为下一首播放")
                                             },
                                             onAddToPlaylistClick = {
                                                 activeMenuSong = song
@@ -422,7 +416,7 @@ fun MusicListScreen(
                                         )
                                         Spacer(Modifier.height(16.dp))
                                         Button(
-                                            onClick = { 
+                                            onClick = {
                                                 scope.launch { syncSongs() }
                                             }
                                         ) {
@@ -462,14 +456,8 @@ fun MusicListScreen(
                                         Platform.playerController.play(song)
                                     },
                                     onAddToQueueClick = {
-                                        val currentPlaylist = Platform.playerController.playlist.value.toMutableList()
-                                        if (!currentPlaylist.any { it.id == song.id }) {
-                                            currentPlaylist.add(song)
-                                            Platform.playerController.setPlaylist(currentPlaylist)
-                                            Platform.toast.show("已添加至队列")
-                                        } else {
-                                            Platform.toast.show("歌曲已在队列中")
-                                        }
+                                        Platform.playerController.insertNext(song)
+                                        Platform.toast.show("已设为下一首播放")
                                     },
                                     onAddToPlaylistClick = {
                                         activeMenuSong = song
@@ -627,7 +615,7 @@ fun MusicListScreen(
                     }
                 }
             }
-            
+
             Spacer(Modifier.height(12.dp))
             TextButton(
                 text = "取消",
@@ -789,7 +777,7 @@ fun SongItem(
                                 index = 0
                             )
                             DropdownImpl(
-                                text = "添加至队列",
+                                text = "下一首播放",
                                 optionSize = 4,
                                 isSelected = false,
                                 onSelectedIndexChange = {

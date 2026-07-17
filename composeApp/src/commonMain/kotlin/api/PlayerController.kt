@@ -33,12 +33,23 @@ interface PlayerController {
     fun getEqualizerBands(): List<String>
     fun getEqualizerBandLevels(): List<Int>
     fun setEqualizerBandLevel(band: Int, level: Int)
-    
+
     // 获取智能预计关闭时间描述
     fun getEstimatedShutdownTime(minutes: Int): String
 
     // 更新通知栏的媒体元数据 (比如歌词开关或模式变更时主动调用)
     fun updateLyricsMetadata() {}
+
+    // 重新加载歌词并刷新媒体元数据 (比如重新刮削歌词后主动调用)
+    fun reloadLyrics() {}
+
+    fun removeAtIndex(index: Int) {}
+    fun clearPlaylist() {}
+    fun insertNext(song: Song) {}
+
+    fun stopService() {}
+    fun setPlatformAlarm(minutes: Int) {}
+    fun cancelPlatformAlarm() {}
 }
 
 

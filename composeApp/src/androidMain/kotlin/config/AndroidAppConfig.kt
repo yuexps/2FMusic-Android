@@ -14,11 +14,11 @@ class AndroidAppConfig : AppConfig {
         private const val KEY_PLAYBACK_STATE = "playback_state"
         private const val DEFAULT_BASE_URL = "http://192.168.31.254:23237"
     }
-    
+
     private var prefs: SharedPreferences? = null
     private var appContext: Context? = null
     private var appStorageDir: String = ""
-    
+
     override fun initialize(context: Any?) {
         if (context is Context) {
             appContext = context.applicationContext
@@ -37,19 +37,19 @@ class AndroidAppConfig : AppConfig {
             context.getExternalFilesDir(null)?.absolutePath ?: context.filesDir.absolutePath
         }
     }
-    
+
     private fun getPrefs(): SharedPreferences {
         return prefs ?: throw IllegalStateException("AndroidAppConfig not initialized with Context")
     }
-    
+
     override fun getBaseUrl(): String {
         return getPrefs().getString(KEY_BASE_URL, DEFAULT_BASE_URL) ?: DEFAULT_BASE_URL
     }
-    
+
     override fun setBaseUrl(url: String) {
         getPrefs().edit { putString(KEY_BASE_URL, url.trimEnd('/')) }
     }
-    
+
     private var cachedHash: String? = null
 
     override fun getPassword(): String? {
@@ -105,6 +105,14 @@ class AndroidAppConfig : AppConfig {
 
     override fun setShowLyricsInNotification(show: Boolean) {
         getPrefs().edit { putBoolean("show_lyrics_in_notification", show) }
+    }
+
+    override fun getDynamicColor(): Boolean {
+        return getPrefs().getBoolean("dynamic_color", true)
+    }
+
+    override fun setDynamicColor(enable: Boolean) {
+        getPrefs().edit { putBoolean("dynamic_color", enable) }
     }
 
     override fun getStorageType(): Int {

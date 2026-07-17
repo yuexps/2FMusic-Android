@@ -16,11 +16,11 @@ kotlin {
         compileSdk = 37
         minSdk = 28
         namespace = "top.msfxp.music.shared"
-        
+
         withHostTest {
         }
     }
-    
+
     compilerOptions {
         freeCompilerArgs.add("-Xexpect-actual-classes")
     }
@@ -31,13 +31,15 @@ kotlin {
                 api(libs.ui)
                 api(libs.components.resources)
                 implementation(compose.materialIconsExtended)
-                
+
                 // Miuix
                 implementation(libs.miuix.ui)
                 implementation(libs.miuix.icons)
                 implementation(libs.miuix.preference)
+                implementation(libs.miuix.blur)
+                implementation(libs.miuix.navigation3.ui)
                 implementation(libs.haze)
-                
+
                 // Ktor & Serialization
                 implementation(libs.ktor.client.core)
                 implementation(libs.ktor.client.auth)
@@ -47,7 +49,7 @@ kotlin {
                 implementation(libs.ktor.client.websockets)
                 implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.datetime)
-                
+
                 // Persistence
                 implementation(libs.sqldelight.runtime)
                 implementation(libs.sqldelight.coroutines)

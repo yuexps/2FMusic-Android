@@ -15,6 +15,8 @@ interface AppConfig {
     fun setLyricTranslationMode(mode: Int) {}
     fun getShowLyricsInNotification(): Boolean = true
     fun setShowLyricsInNotification(show: Boolean) {}
+    fun getDynamicColor(): Boolean = true
+    fun setDynamicColor(enable: Boolean) {}
     fun getStorageType(): Int = 0 // 0: 内部存储, 1: 外部存储
     fun setStorageType(type: Int) {}
     fun getStorageDirPath(): String = ""

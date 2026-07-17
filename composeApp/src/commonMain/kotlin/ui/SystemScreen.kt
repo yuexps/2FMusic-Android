@@ -41,17 +41,6 @@ fun SystemScreen(modifier: Modifier = Modifier) {
     var isInitialLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
-    // 旋转动画 (使用 InfiniteTransition 确保循环)
-    val infiniteTransition = rememberInfiniteTransition(label = "refresh_infinite")
-    val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "refresh_rotation"
-    )
 
     val loadStatus = suspend {
         try {
@@ -61,7 +50,7 @@ fun SystemScreen(modifier: Modifier = Modifier) {
         } catch (e: Throwable) {
             status = null
             errorMessage = when {
-                e.message?.contains("401", ignoreCase = true) == true || 
+                e.message?.contains("401", ignoreCase = true) == true ||
                 e.message?.contains("unauthorized", ignoreCase = true) == true -> "认证失败，请配置正确的密码"
                 else -> "无法连接到服务器"
             }
@@ -88,42 +77,41 @@ fun SystemScreen(modifier: Modifier = Modifier) {
         topBar = {
             TopAppBar(
                 title = "系统设置",
-                scrollBehavior = scrollBehavior,
-                actions = {
-                    IconButton(
-                        onClick = {
-                            if (!isRefreshing) {
-                                coroutineScope.launch {
-                                    GlobalState.triggerRefresh()
-                                }
-                            }
-                        },
-                        modifier = Modifier.padding(end = 16.dp)
-                    ) {
-                        Icon(
-                            imageVector = MiuixIcons.Refresh,
-                            contentDescription = "刷新",
-                            modifier = Modifier.graphicsLayer { 
-                                if (isRefreshing) rotationZ = rotation 
-                            }
-                        )
-                    }
-                }
+                scrollBehavior = scrollBehavior
             )
         },
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(scrollState)
-                .padding(bottom = 24.dp)
+        val pullToRefreshState = rememberPullToRefreshState()
+
+        PullToRefresh(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                isRefreshing = true
+                coroutineScope.launch {
+                    GlobalState.triggerRefresh()
+                }
+            },
+            pullToRefreshState = pullToRefreshState,
+            topAppBarScrollBehavior = scrollBehavior,
+            refreshTexts = listOf(
+                "下拉刷新",
+                "松开刷新",
+                "正在刷新",
+                "刷新成功"
+            ),
+            modifier = Modifier.padding(innerPadding)
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .padding(bottom = 24.dp)
+            ) {
             // 版本檢查卡片 (Updater 风格)
 
             SmallTitle(text = "服务状态", modifier = Modifier.padding(start = 8.dp, top = 16.dp, bottom = 8.dp))
-            
+
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -145,7 +133,7 @@ fun SystemScreen(modifier: Modifier = Modifier) {
             }
 
             SmallTitle(text = "后端配置", modifier = Modifier.padding(start = 8.dp, top = 24.dp, bottom = 8.dp))
-            
+
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -157,16 +145,16 @@ fun SystemScreen(modifier: Modifier = Modifier) {
                     var showSuccess by remember { mutableStateOf(false) }
                     var passwordVisible by remember { mutableStateOf(false) }
                     val coroutineScope = rememberCoroutineScope()
-                    
+
                     TextField(
                         value = baseUrl,
                         onValueChange = { baseUrl = it },
                         label = "服务器地址",
                         modifier = Modifier.fillMaxWidth()
                     )
-                    
+
                     Spacer(Modifier.height(12.dp))
-                    
+
                     TextField(
                         value = password,
                         onValueChange = { password = it },
@@ -187,9 +175,9 @@ fun SystemScreen(modifier: Modifier = Modifier) {
                         },
                         modifier = Modifier.fillMaxWidth()
                     )
-                    
+
                     Spacer(Modifier.height(16.dp))
-                    
+
                     Button(
                         onClick = {
                             Platform.config.setBaseUrl(baseUrl)
@@ -210,7 +198,7 @@ fun SystemScreen(modifier: Modifier = Modifier) {
             }
 
             SmallTitle(text = "存储配置", modifier = Modifier.padding(start = 8.dp, top = 24.dp, bottom = 8.dp))
-            
+
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -218,7 +206,7 @@ fun SystemScreen(modifier: Modifier = Modifier) {
             ) {
                 var storageType by remember { mutableStateOf(Platform.config.getStorageType()) }
                 val options = listOf("内部存储", "外部存储")
-                
+
                 OverlayDropdownPreference(
                     title = "存储位置",
                     summary = "缓存与下载的保存目录",
@@ -230,6 +218,7 @@ fun SystemScreen(modifier: Modifier = Modifier) {
                     }
                 )
             }
+        }
         }
     }
 }

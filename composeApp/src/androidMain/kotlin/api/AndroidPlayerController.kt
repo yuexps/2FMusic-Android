@@ -16,13 +16,14 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import utils.Platform
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import model.PlayMode
 import model.PlaybackState
 import model.Song
 import utils.CoverUtil
 import androidx.core.net.toUri
+import api.GlobalState
+import androidx.media3.common.HeartRating
 
 @androidx.media3.common.util.UnstableApi
 object AndroidPlayerController : BasePlayerController() {
@@ -37,12 +38,13 @@ object AndroidPlayerController : BasePlayerController() {
     private var currentLyricsList: List<utils.LrcLine> = emptyList()
     private var lastPostedLyricText: String? = null
     private var lastPostedLyricArtist: String? = null
+    private var lyricsJob: Job? = null
 
     fun initialize(context: Context) {
         if (isInitialized) return
         this.appContext = context.applicationContext
         val appContext = this.appContext!!
-        
+
         // 恢复均衡器持久化配置
         val prefs = appContext.getSharedPreferences("2fmusic_prefs", Context.MODE_PRIVATE)
         eqEnabled = prefs.getBoolean("eq_enabled", false)
@@ -51,25 +53,25 @@ object AndroidPlayerController : BasePlayerController() {
                 bandLevels[i] = prefs.getInt("eq_band_$i", 0)
             }
         }
-        
+
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
-            
+
         val baseDataSourceFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
-            
+
         Platform.config.getPasswordHash()?.let { hash ->
             baseDataSourceFactory.setDefaultRequestProperties(mapOf("X-Password" to hash))
         }
-        
+
         // 使用 DefaultDataSource.Factory 自动分发协议 (file://, http:// 等)
         val dataSourceFactory = DefaultDataSource.Factory(appContext, baseDataSourceFactory)
-        
+
         val mediaSourceFactory = DefaultMediaSourceFactory(appContext)
             .setDataSourceFactory(dataSourceFactory)
-            
+
         _player = ExoPlayer.Builder(appContext)
             .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(audioAttributes, true) // true means handle audio focus automatically
@@ -85,7 +87,7 @@ object AndroidPlayerController : BasePlayerController() {
                             else -> PlaybackState.IDLE
                         }
                         this@AndroidPlayerController.playbackState.value = newState
-                        
+
                         if (state == Player.STATE_READY) {
                             this@AndroidPlayerController.duration.value = this@apply.duration
                             startProgressTracker()
@@ -106,19 +108,46 @@ object AndroidPlayerController : BasePlayerController() {
 
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                         val songId = mediaItem?.mediaId
-                        val song = _currentPlaylist.find { it.id == songId }
-                        currentSong.value = song
-                        val index = _currentPlaylist.indexOfFirst { it.id == songId }
-                        currentIndex.value = index
+                        val oldSongId = currentSong.value?.id
 
-                        lastPostedLyricText = null
-                        lastPostedLyricArtist = null
-                        currentLyricsList = emptyList()
-                        song?.let { s ->
-                            scope.launch(Dispatchers.IO) {
-                                val localLrc = utils.FileStore.readLyrics(s.id)
-                                if (localLrc != null) {
-                                    currentLyricsList = utils.LrcParser.parse(localLrc, s.title)
+                        val index = player.currentMediaItemIndex
+                        currentIndex.value = index
+                        val song = _currentPlaylist.getOrNull(index)
+                        currentSong.value = song
+
+                        if (oldSongId != songId) {
+                            lastPostedLyricText = null
+                            lastPostedLyricArtist = null
+                            currentLyricsList = emptyList()
+
+                            lyricsJob?.cancel() // 取消之前的歌词加载/下载协程，避免旧歌任务覆盖新歌歌词
+                            song?.let { s ->
+                                lyricsJob = scope.launch(Dispatchers.Main) {
+                                    // 1. 尝试从本地加载已缓存的歌词
+                                    val localLrc = withContext(Dispatchers.IO) {
+                                        utils.FileStore.readLyrics(s.id)
+                                    }
+                                    if (localLrc != null) {
+                                        currentLyricsList = utils.LrcParser.parse(localLrc, s.title)
+                                        updateLyricsMetadata()
+                                    }
+
+                                    // 2. 后台异步确保下载/补完最新歌词
+                                    try {
+                                        Platform.repository.ensureLyricsDownloaded(s)
+                                        // 3. 下载完成后，如果先前本地未成功加载，则重新读取加载并刷新元数据
+                                        if (currentLyricsList.isEmpty()) {
+                                            val newLrc = withContext(Dispatchers.IO) {
+                                                utils.FileStore.readLyrics(s.id)
+                                            }
+                                            if (newLrc != null) {
+                                                currentLyricsList = utils.LrcParser.parse(newLrc, s.title)
+                                                updateLyricsMetadata()
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        Platform.logger.e("Audio", "自动下载/更新歌词失败: ${e.message}")
+                                    }
                                 }
                             }
                         }
@@ -141,7 +170,7 @@ object AndroidPlayerController : BasePlayerController() {
                         }
 
                         Platform.logger.e("Player", "播放器错误: 代码=${error.errorCode}, 消息=${error.message}", error)
-                        
+
                         // 发送 Toast 和通知栏提醒
                         Platform.toast.show(errorMessage)
                         Platform.notification.showMessage(
@@ -155,14 +184,42 @@ object AndroidPlayerController : BasePlayerController() {
                     }
                 })
             }
-        
+
         // 设置初始播放模式
         setPlayMode(PlayMode.LIST_LOOP)
-        
+
         // 恢复上次播放状态
         restoreState()
 
         isInitialized = true
+
+        // 监控全局收藏集合变更，同步将点赞状态刷给系统播控中心 (Android 13+ / HyperOS)
+        scope.launch {
+            GlobalState.favoriteIds.collect { favoriteIds ->
+                try {
+                    val currentItem = _player?.currentMediaItem
+                    if (currentItem != null) {
+                        val isFav = favoriteIds.contains(currentItem.mediaId)
+                        val rating = currentItem.mediaMetadata.userRating
+                        val isCurrentlyFav = (rating as? HeartRating)?.isHeart ?: false
+                        if (isFav != isCurrentlyFav) {
+                            val newMetadata = currentItem.mediaMetadata.buildUpon()
+                                .setUserRating(HeartRating(isFav))
+                                .build()
+                            val newMediaItem = currentItem.buildUpon()
+                                .setMediaMetadata(newMetadata)
+                                .build()
+                            val idx = _player?.currentMediaItemIndex ?: -1
+                            if (idx != -1) {
+                                _player?.replaceMediaItem(idx, newMediaItem)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
     }
 
     private var _currentPlaylist: List<Song> = emptyList()
@@ -175,7 +232,7 @@ object AndroidPlayerController : BasePlayerController() {
     private fun createMediaItem(song: Song, verbose: Boolean = false): MediaItem {
         val baseUrl = Platform.config.getBaseUrl()
         val auth = getAuthParam()
-        
+
         var uri: Uri? = null
         song.localAudioPath?.let { path ->
             if (verbose) Platform.logger.i("Audio", "数据库中有本地路径: $path")
@@ -186,13 +243,13 @@ object AndroidPlayerController : BasePlayerController() {
                 if (verbose) Platform.logger.i("Audio", "未在预期位置找到文件，路径: $path")
             }
         }
-        
+
         if (uri == null) {
             val url = "$baseUrl/api/music/play/${song.id}?$auth"
             uri = url.toUri()
             if (verbose) Platform.logger.i("Audio", "回退到远程 URL: $url")
         }
-        
+
         val mimeType = when {
             song.filename?.endsWith(".mp3", ignoreCase = true) == true -> MimeTypes.AUDIO_MPEG
             song.filename?.endsWith(".flac", ignoreCase = true) == true -> MimeTypes.AUDIO_FLAC
@@ -201,17 +258,19 @@ object AndroidPlayerController : BasePlayerController() {
             song.filename?.endsWith(".m4a", ignoreCase = true) == true -> MimeTypes.AUDIO_MP4
             else -> null
         }
-        
+
         val albumArtUrl = CoverUtil.getCoverUrl(song)
 
+        val isFavorite = api.GlobalState.favoriteIds.value.contains(song.id)
         val metadata = MediaMetadata.Builder()
             .setTitle(song.title ?: song.filename)
             .setArtist(song.artist ?: "未知艺术家")
             .setAlbumTitle(song.album ?: "")
             .setArtworkUri(albumArtUrl?.toUri())
             .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+            .setUserRating(androidx.media3.common.HeartRating(isFavorite))
             .build()
-            
+
         return MediaItem.Builder()
             .setUri(uri)
             .setMediaId(song.id)
@@ -225,16 +284,16 @@ object AndroidPlayerController : BasePlayerController() {
         val index = _currentPlaylist.indexOfFirst { it.id == song.id }
         if (index != -1) {
             Platform.logger.i("Player", "在现有播放列表中找到索引 $index")
-            
+
             // 关键：检查当前播放队列里的 MediaItem 是否需要更新（例如从远程 URL 变为本地路径）
             val newMediaItem = createMediaItem(song, verbose = true)
             val currentMediaItem = try { player.getMediaItemAt(index) } catch (_: Exception) { null }
-            
+
             if (currentMediaItem != null && newMediaItem.localConfiguration?.uri != currentMediaItem.localConfiguration?.uri) {
                 Platform.logger.i("Audio", "正在将索引 $index 处的媒体项更新为本地化 URI。")
                 player.replaceMediaItem(index, newMediaItem)
             }
-            
+
             playAtIndex(index)
         } else {
             Platform.logger.i("Player", "不在播放列表中，设为单曲播放")
@@ -286,33 +345,43 @@ object AndroidPlayerController : BasePlayerController() {
     }
 
     override fun next() {
-        Platform.logger.i("Player", "next() 被调用。hasNext=${player.hasNextMediaItem()}, 列表大小=${_currentPlaylist.size}")
-        if (player.hasNextMediaItem()) {
-            player.seekToNext()
-        } else if (_currentPlaylist.isNotEmpty()) {
-            // 列表结尾, 循环回第一首
-            Platform.logger.i("Player", "next() 循环回到索引 0")
-            player.seekTo(0, 0)
+        Platform.logger.i("Player", "next() 被调用。playMode=${playMode.value}, 列表大小=${_currentPlaylist.size}")
+        if (_currentPlaylist.isEmpty()) return
+
+        if (playMode.value == PlayMode.SINGLE_LOOP) {
+            val nextIndex = (currentIndex.value + 1) % _currentPlaylist.size
+            playAtIndex(nextIndex)
+        } else {
+            if (player.hasNextMediaItem()) {
+                player.seekToNext()
+            } else {
+                player.seekTo(0, 0)
+            }
+            ensurePrepared()
+            player.play()
+            updateService()
+            saveState()
         }
-        ensurePrepared()
-        player.play() // 显式调用播放
-        updateService()
-        saveState()
     }
 
     override fun previous() {
-        Platform.logger.i("Player", "previous() 被调用。hasPrevious=${player.hasPreviousMediaItem()}, 列表大小=${_currentPlaylist.size}")
-        if (player.hasPreviousMediaItem()) {
-            player.seekToPrevious()
-        } else if (_currentPlaylist.isNotEmpty()) {
-            // 列表开头, 循环到最后一首
-            Platform.logger.i("Player", "previous() 循环到索引 ${_currentPlaylist.size - 1}")
-            player.seekTo(_currentPlaylist.size - 1, 0)
+        Platform.logger.i("Player", "previous() 被调用。playMode=${playMode.value}, 列表大小=${_currentPlaylist.size}")
+        if (_currentPlaylist.isEmpty()) return
+
+        if (playMode.value == PlayMode.SINGLE_LOOP) {
+            val prevIndex = if (currentIndex.value - 1 < 0) _currentPlaylist.size - 1 else currentIndex.value - 1
+            playAtIndex(prevIndex)
+        } else {
+            if (player.hasPreviousMediaItem()) {
+                player.seekToPrevious()
+            } else {
+                player.seekTo(_currentPlaylist.size - 1, 0)
+            }
+            ensurePrepared()
+            player.play()
+            updateService()
+            saveState()
         }
-        ensurePrepared()
-        player.play() // 显式调用播放
-        updateService()
-        saveState()
     }
 
     override fun seekTo(position: Long) {
@@ -342,7 +411,7 @@ object AndroidPlayerController : BasePlayerController() {
     override fun setPlaylist(songs: List<Song>) {
         val oldIds = _currentPlaylist.map { it.id }
         val newIds = songs.map { it.id }
-        
+
         if (oldIds == newIds) {
             // 列表 ID 没变，检查是否有歌曲从未下载变成已下载，进行热替换
             songs.forEachIndexed { index, song ->
@@ -388,7 +457,7 @@ object AndroidPlayerController : BasePlayerController() {
                     if (dur > 0) {
                         currentPosition.value = pos
                         progress.value = pos.toFloat() / dur.toFloat()
-                        
+
                         updateLyricsMetadata(pos)
 
                         // 每 10 秒保存一次进度
@@ -421,17 +490,17 @@ object AndroidPlayerController : BasePlayerController() {
 
     private fun restoreState() {
         val data = Platform.config.loadPlaybackState() ?: return
-        
+
         // 1. 恢复播放模式
         setPlayMode(data.playMode)
-        
+
         // 2. 恢复播放列表
         if (data.playlist.isNotEmpty()) {
             _currentPlaylist = data.playlist
             playlist.value = _currentPlaylist
             val mediaItems = _currentPlaylist.map { createMediaItem(it) }
             player.setMediaItems(mediaItems)
-            
+
             // 3. 恢复歌曲位置
             val index = _currentPlaylist.indexOfFirst { it.id == data.currentSongId }
             if (index != -1) {
@@ -450,9 +519,9 @@ object AndroidPlayerController : BasePlayerController() {
     private fun updateLyricsMetadata(pos: Long) {
         val song = currentSong.value ?: return
         val player = _player ?: return
-        
+
         val showLyrics = Platform.config.getShowLyricsInNotification()
-        
+
         var lyricText: String? = null
         if (showLyrics && currentLyricsList.isNotEmpty()) {
             val idx = utils.LrcParser.getCurrentLineIndex(currentLyricsList, pos)
@@ -460,7 +529,7 @@ object AndroidPlayerController : BasePlayerController() {
                 lyricText = currentLyricsList[idx].lines.firstOrNull()
             }
         }
-        
+
         val hasLyric = !lyricText.isNullOrBlank()
         val targetTitle = if (hasLyric) lyricText else (song.title ?: song.filename)
         val targetArtist = if (hasLyric) {
@@ -468,11 +537,11 @@ object AndroidPlayerController : BasePlayerController() {
         } else {
             song.artist ?: "未知艺术家"
         }
-        
+
         if (lastPostedLyricText == targetTitle && lastPostedLyricArtist == targetArtist) return
         lastPostedLyricText = targetTitle
         lastPostedLyricArtist = targetArtist
-        
+
         try {
             val currentMediaItem = player.currentMediaItem
             if (currentMediaItem != null) {
@@ -480,17 +549,96 @@ object AndroidPlayerController : BasePlayerController() {
                     .setTitle(targetTitle)
                     .setArtist(targetArtist)
                     .build()
-                
+
                 val newMediaItem = currentMediaItem.buildUpon()
                     .setMediaMetadata(newMetadata)
                     .build()
-                
+
                 val currentIndex = player.currentMediaItemIndex
                 player.replaceMediaItem(currentIndex, newMediaItem)
             }
         } catch (e: Exception) {
             Platform.logger.e("Audio", "更新动态歌词媒体元数据失败: ${e.message}")
         }
+    }
+
+    override fun reloadLyrics() {
+        val song = currentSong.value ?: return
+        lyricsJob?.cancel()
+        lyricsJob = scope.launch(Dispatchers.Main) {
+            val localLrc = withContext(Dispatchers.IO) {
+                utils.FileStore.readLyrics(song.id)
+            }
+            currentLyricsList = if (localLrc != null) {
+                utils.LrcParser.parse(localLrc, song.title)
+            } else {
+                emptyList()
+            }
+            updateLyricsMetadata()
+        }
+    }
+
+    override fun clearPlaylist() {
+        Platform.logger.i("Player", "clearPlaylist() 被调用，清空所有播放媒体项。")
+        _currentPlaylist = emptyList()
+        playlist.value = emptyList()
+        player.clearMediaItems()
+        currentSong.value = null
+        currentIndex.value = -1
+        saveState()
+    }
+
+    override fun removeAtIndex(index: Int) {
+        Platform.logger.i("Player", "removeAtIndex(index = $index) 被调用。")
+        if (index in _currentPlaylist.indices) {
+            val mutable = _currentPlaylist.toMutableList()
+            mutable.removeAt(index)
+            _currentPlaylist = mutable
+            playlist.value = mutable
+            player.removeMediaItem(index)
+
+            if (mutable.isEmpty()) {
+                currentSong.value = null
+                currentIndex.value = -1
+            } else {
+                val currentIdx = player.currentMediaItemIndex
+                currentIndex.value = currentIdx
+                currentSong.value = mutable.getOrNull(currentIdx)
+            }
+            saveState()
+        }
+    }
+
+    override fun insertNext(song: Song) {
+        Platform.logger.i("Player", "insertNext(song = ${song.title}) 被调用。")
+        val mutable = _currentPlaylist.toMutableList()
+        val existingIndex = mutable.indexOfFirst { it.id == song.id }
+        val currentIdx = currentIndex.value
+
+        if (existingIndex != -1) {
+            if (existingIndex == currentIdx) {
+                Platform.logger.i("Player", "目标歌曲正在播放中，不执行插队操作。")
+                return
+            }
+
+            mutable.removeAt(existingIndex)
+            player.removeMediaItem(existingIndex)
+
+            val insertPos = if (existingIndex < currentIdx) currentIdx else currentIdx + 1
+            val targetPos = if (insertPos in 0..mutable.size) insertPos else mutable.size
+
+            mutable.add(targetPos, song)
+            player.addMediaItem(targetPos, createMediaItem(song))
+        } else {
+            val targetPos = if (currentIdx + 1 in 0..mutable.size) currentIdx + 1 else mutable.size
+            mutable.add(targetPos, song)
+            player.addMediaItem(targetPos, createMediaItem(song))
+        }
+
+        _currentPlaylist = mutable
+        playlist.value = mutable
+        currentIndex.value = player.currentMediaItemIndex
+        saveState()
     }
 
     // 均衡器成员
@@ -508,7 +656,7 @@ object AndroidPlayerController : BasePlayerController() {
                 val eq = android.media.audiofx.Equalizer(0, sessionId)
                 equalizer = eq
                 eq.enabled = eqEnabled
-                
+
                 // 恢复缓存的频段增益
                 bandLevels.forEach { (band, level) ->
                     try {
@@ -589,6 +737,46 @@ object AndroidPlayerController : BasePlayerController() {
             "预计将在 $hourStr:$minuteStr 关闭播放 (${minutes} 分钟后)"
         } catch (e: Exception) {
             "${minutes} 分钟后关闭播放"
+        }
+    }
+
+    override fun stopService() {
+        val context = appContext ?: return
+        Platform.logger.i("Player", "stopService() 被调用，发送 ACTION_STOP。")
+        try {
+            val intent = Intent(context, Class.forName("top.msfxp.music.PlayerService")).apply {
+                action = "top.msfxp.music.ACTION_STOP"
+            }
+            context.startService(intent)
+        } catch (e: Exception) {
+            Platform.logger.e("Player", "stopService() 发送 Intent 失败: ${e.message}")
+        }
+    }
+
+    override fun setPlatformAlarm(minutes: Int) {
+        val context = appContext ?: return
+        Platform.logger.i("Player", "setPlatformAlarm(minutes = $minutes) 被调用，发送 ACTION_SET_ALARM。")
+        try {
+            val intent = Intent(context, Class.forName("top.msfxp.music.PlayerService")).apply {
+                action = "top.msfxp.music.ACTION_SET_ALARM"
+                putExtra("extra_alarm_minutes", minutes)
+            }
+            context.startService(intent)
+        } catch (e: Exception) {
+            Platform.logger.e("Player", "setPlatformAlarm() 发送 Intent 失败: ${e.message}")
+        }
+    }
+
+    override fun cancelPlatformAlarm() {
+        val context = appContext ?: return
+        Platform.logger.i("Player", "cancelPlatformAlarm() 被调用，发送 ACTION_CANCEL_ALARM。")
+        try {
+            val intent = Intent(context, Class.forName("top.msfxp.music.PlayerService")).apply {
+                action = "top.msfxp.music.ACTION_CANCEL_ALARM"
+            }
+            context.startService(intent)
+        } catch (e: Exception) {
+            Platform.logger.e("Player", "cancelPlatformAlarm() 发送 Intent 失败: ${e.message}")
         }
     }
 }
