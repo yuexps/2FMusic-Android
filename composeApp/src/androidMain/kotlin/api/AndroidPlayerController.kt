@@ -16,7 +16,6 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import utils.Platform
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.StateFlow
 import model.PlayMode
 import model.PlaybackState
 import model.Song
@@ -24,6 +23,7 @@ import utils.CoverUtil
 import androidx.core.net.toUri
 import api.GlobalState
 import androidx.media3.common.HeartRating
+import androidx.media3.common.ForwardingPlayer
 
 @androidx.media3.common.util.UnstableApi
 object AndroidPlayerController : BasePlayerController() {
@@ -40,6 +40,10 @@ object AndroidPlayerController : BasePlayerController() {
     private var lastPostedLyricArtist: String? = null
     private var lyricsJob: Job? = null
     private var isSongReported = false
+    
+    private var _lyricPlayer: LyricForwardingPlayer? = null
+    val lyricPlayer: Player
+        get() = _lyricPlayer ?: player
 
     fun initialize(context: Context) {
         if (isInitialized) return
@@ -123,6 +127,7 @@ object AndroidPlayerController : BasePlayerController() {
                         val song = _currentPlaylist.getOrNull(index)
                         currentSong.value = song
 
+                        _lyricPlayer?.setCustomMetadata(null)
                         lastPostedLyricText = null
                         lastPostedLyricArtist = null
                         currentLyricsList = emptyList()
@@ -190,8 +195,9 @@ object AndroidPlayerController : BasePlayerController() {
                     }
                 })
             }
-
-        // 设置初始播放模式
+        _lyricPlayer = LyricForwardingPlayer(_player!!)
+ 
+         // 设置初始播放模式
         setPlayMode(PlayMode.LIST_LOOP)
 
         // 恢复上次播放状态
@@ -463,7 +469,6 @@ object AndroidPlayerController : BasePlayerController() {
                     if (dur > 0) {
                         currentPosition.value = pos
                         progress.value = pos.toFloat() / dur.toFloat()
-
                         updateLyricsMetadata(pos)
 
                         // 播放进度超过 1 分钟（60s）或者超过总长度的一半时自动向服务器上报播放记录
@@ -541,6 +546,7 @@ object AndroidPlayerController : BasePlayerController() {
     private fun updateLyricsMetadata(pos: Long) {
         val song = currentSong.value ?: return
         val player = _player ?: return
+        val lyricPlayer = _lyricPlayer ?: return
 
         val showLyrics = Platform.config.getShowLyricsInNotification()
 
@@ -564,23 +570,30 @@ object AndroidPlayerController : BasePlayerController() {
         lastPostedLyricText = targetTitle
         lastPostedLyricArtist = targetArtist
 
+        val currentMediaItem = player.currentMediaItem
+        if (currentMediaItem != null) {
+            val newMetadata = currentMediaItem.mediaMetadata.buildUpon()
+                .setTitle(targetTitle)
+                .setArtist(targetArtist)
+                .build()
+            lyricPlayer.setCustomMetadata(newMetadata)
+        }
+        sendBluetoothMetadataBroadcast(song, lyricText)
+    }
+
+    private fun sendBluetoothMetadataBroadcast(song: model.Song, lyric: String?) {
+        val context = appContext ?: return
         try {
-            val currentMediaItem = player.currentMediaItem
-            if (currentMediaItem != null) {
-                val newMetadata = currentMediaItem.mediaMetadata.buildUpon()
-                    .setTitle(targetTitle)
-                    .setArtist(targetArtist)
-                    .build()
-
-                val newMediaItem = currentMediaItem.buildUpon()
-                    .setMediaMetadata(newMetadata)
-                    .build()
-
-                val currentIndex = player.currentMediaItemIndex
-                player.replaceMediaItem(currentIndex, newMediaItem)
+            val intent = Intent("com.android.music.metachanged").apply {
+                putExtra("id", song.id.hashCode().toLong())
+                putExtra("artist", song.artist ?: "未知歌手")
+                putExtra("album", song.album ?: "")
+                putExtra("track", lyric ?: (song.title ?: song.filename ?: "未知音乐"))
+                putExtra("playing", playbackState.value == PlaybackState.PLAYING)
             }
+            context.sendBroadcast(intent)
         } catch (e: Exception) {
-            Platform.logger.e("Audio", "更新动态歌词媒体元数据失败: ${e.message}")
+            Platform.logger.e("Audio", "发送车载蓝牙媒体广播失败: ${e.message}")
         }
     }
 
@@ -800,5 +813,37 @@ object AndroidPlayerController : BasePlayerController() {
         } catch (e: Exception) {
             Platform.logger.e("Player", "cancelPlatformAlarm() 发送 Intent 失败: ${e.message}")
         }
+    }
+}
+
+@androidx.media3.common.util.UnstableApi
+class LyricForwardingPlayer(player: Player) : ForwardingPlayer(player) {
+    private val myListeners = java.util.concurrent.CopyOnWriteArrayList<Player.Listener>()
+    private var customMetadata: MediaMetadata? = null
+
+    fun setCustomMetadata(metadata: MediaMetadata?) {
+        this.customMetadata = metadata
+        val currentMeta = mediaMetadata
+        myListeners.forEach { 
+            try {
+                it.onMediaMetadataChanged(currentMeta)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    override fun addListener(listener: Player.Listener) {
+        super.addListener(listener)
+        myListeners.add(listener)
+    }
+
+    override fun removeListener(listener: Player.Listener) {
+        super.removeListener(listener)
+        myListeners.remove(listener)
+    }
+
+    override fun getMediaMetadata(): MediaMetadata {
+        return customMetadata ?: super.getMediaMetadata()
     }
 }

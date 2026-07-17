@@ -5,11 +5,6 @@ import android.content.SharedPreferences
 import androidx.core.content.edit
 import model.PlaybackStateData
 import kotlinx.serialization.json.Json
-import android.os.StatFs
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.Dispatchers
-import utils.Platform
 
 class AndroidAppConfig : AppConfig {
     companion object {

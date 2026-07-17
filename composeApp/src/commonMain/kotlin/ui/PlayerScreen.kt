@@ -56,13 +56,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -1550,31 +1549,29 @@ fun LyricsView(
                 // 手指抬起，静止等待 3 秒后自动复位
                 delay(3000)
                 if (latestIndex >= 0) {
-                    val currentItem = listState.layoutInfo.visibleItemsInfo.find { it.index == latestIndex }
                     val line = lyrics.getOrNull(latestIndex)
                     val hasTrans = line?.let { it.lines.size > 1 && translationMode != 0 } ?: false
                     val estimatedHeight = if (hasTrans) 80.dp else 50.dp
-                    val itemHeightPx = currentItem?.size ?: with(density) { estimatedHeight.toPx().toInt() }
 
                     val viewportHeightPx = listState.layoutInfo.viewportEndOffset.let { if (it > 0) it else with(density) { 500.dp.toPx().toInt() } }
-                    val centerScrollOffsetPx = (viewportHeightPx / 2) - (itemHeightPx / 2)
+                    val itemHeightPx = with(density) { estimatedHeight.toPx().toInt() }
+                    val centerScrollOffsetPx = (itemHeightPx / 2) - (viewportHeightPx / 2)
 
-                    val currentVisibleIndex = listState.firstVisibleItemIndex
+                    val currentVisibleIndex = (listState.firstVisibleItemIndex - 1).coerceAtLeast(0)
                     val distance = kotlin.math.abs(currentVisibleIndex - latestIndex)
 
                     if (distance > 15) {
-                        // 距离太远，先快速跳转到距离目标 8 个 item 处，防御超长距离动画在 Compose 中引起的渲染闪烁与重置到顶部的 Bug
                         val jumpIndex = if (latestIndex > currentVisibleIndex) {
-                            latestIndex - 8
+                            (latestIndex + 1) - 8
                         } else {
-                            latestIndex + 8
+                            (latestIndex + 1) + 8
                         }
                         listState.scrollToItem(index = jumpIndex)
                     }
 
-                    // 平滑滚动回当前行 (虚线指示器依然存在时滚动，视觉上非常连贯)
+                    // 平滑滚动回当前行
                     listState.animateScrollToItem(
-                        index = latestIndex,
+                        index = latestIndex + 1,
                         scrollOffset = centerScrollOffsetPx
                     )
                 }
@@ -1593,7 +1590,8 @@ fun LyricsView(
                 val items = listState.layoutInfo.visibleItemsInfo
                 if (items.isEmpty()) 0 else {
                     val viewportCenter = listState.layoutInfo.viewportEndOffset / 2
-                    items.minByOrNull { kotlin.math.abs((it.offset + it.size / 2) - viewportCenter) }?.index ?: 0
+                    val centerItem = items.minByOrNull { kotlin.math.abs((it.offset + it.size / 2) - viewportCenter) }
+                    (centerItem?.index?.minus(1) ?: 0).coerceIn(0, lyrics.size - 1)
                 }
             }
         }
@@ -1602,17 +1600,16 @@ fun LyricsView(
     // 自动跟随滚动
     LaunchedEffect(currentIndex) {
         if (!userScrolledByManual && currentIndex >= 0) {
-            val currentItem = listState.layoutInfo.visibleItemsInfo.find { it.index == currentIndex }
             val line = lyrics.getOrNull(currentIndex)
             val hasTrans = line?.let { it.lines.size > 1 && translationMode != 0 } ?: false
             val estimatedHeight = if (hasTrans) 80.dp else 50.dp
-            val itemHeightPx = currentItem?.size ?: with(density) { estimatedHeight.toPx().toInt() }
 
             val viewportHeightPx = listState.layoutInfo.viewportEndOffset.let { if (it > 0) it else with(density) { 500.dp.toPx().toInt() } }
-            val centerScrollOffsetPx = (viewportHeightPx / 2) - (itemHeightPx / 2)
+            val itemHeightPx = with(density) { estimatedHeight.toPx().toInt() }
+            val centerScrollOffsetPx = (itemHeightPx / 2) - (viewportHeightPx / 2)
 
             listState.animateScrollToItem(
-                index = currentIndex,
+                index = currentIndex + 1,
                 scrollOffset = centerScrollOffsetPx
             )
         }
@@ -1662,20 +1659,29 @@ fun LyricsView(
                                 blendMode = BlendMode.DstIn
                             )
                         },
-                    horizontalAlignment = Alignment.Start,
-                    contentPadding = PaddingValues(vertical = maxHeight / 2)
+                    horizontalAlignment = Alignment.Start
                 ) {
+                    item {
+                        Spacer(modifier = Modifier.height(maxHeight / 2))
+                    }
+
                     itemsIndexed(lyrics, key = { index, _ -> index }) { index, line ->
                         LrcLineItem(
                             line = line,
                             isActive = index == currentIndex,
                             translationMode = translationMode,
                             fontSizeSp = fontSizeSp,
+                            currentPosition = currentPosition,
+                            playbackState = playbackState,
                             onClick = {
                                 userScrolledByManual = false
                                 onLineClick(line.time)
                             }
                         )
+                    }
+
+                    item {
+                        Spacer(modifier = Modifier.height(maxHeight / 2))
                     }
                 }
                 if (userScrolledByManual) {
@@ -1875,9 +1881,27 @@ private fun LrcLineItem(
     isActive: Boolean,
     translationMode: Int,
     fontSizeSp: Float,
+    currentPosition: Long,
+    playbackState: PlaybackState,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // 进度高频插值器 (约 60fps)
+    var localTimeMs by remember { mutableStateOf(currentPosition) }
+    LaunchedEffect(isActive, playbackState, currentPosition) {
+        if (isActive && playbackState == PlaybackState.PLAYING) {
+            val baseTime = currentPosition
+            val systemStartTime = utils.Platform.getTimeMillis()
+            while (true) {
+                val elapsed = utils.Platform.getTimeMillis() - systemStartTime
+                localTimeMs = baseTime + elapsed
+                delay(16)
+            }
+        } else {
+            localTimeMs = currentPosition
+        }
+    }
+
     val scale by animateFloatAsState(
         targetValue = if (isActive) 1.1f else 1f,
         animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
@@ -1895,8 +1919,8 @@ private fun LrcLineItem(
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .clickable { onClick() }
-            .heightIn(min = minHeight)
-            .padding(vertical = 8.dp, horizontal = 32.dp),
+            .height(minHeight)
+            .padding(horizontal = 32.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1926,13 +1950,58 @@ private fun LrcLineItem(
                 )
 
                 if (isMainLine) {
-                    Text(
-                        text = text,
-                        fontSize = fontSizeSp.sp,
-                        fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                        color = textColor,
-                        textAlign = TextAlign.Start
-                    )
+                    if (line.isYrc && isActive && line.words.isNotEmpty()) {
+                        // 正在播放的 YRC 逐字高亮渲染 (仅在 Draw 阶段刷新，0 重组，0 测量)
+                        val activeColor = MiuixTheme.colorScheme.primary
+                        val inactiveColor = MiuixTheme.colorScheme.onSurfaceVariantActions
+
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = text,
+                                fontSize = fontSizeSp.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = inactiveColor,
+                                textAlign = TextAlign.Start
+                            )
+
+                            Text(
+                                text = text,
+                                fontSize = fontSizeSp.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = activeColor,
+                                textAlign = TextAlign.Start,
+                                modifier = Modifier.drawWithContent {
+                                    val curProgressMs = localTimeMs
+                                    var highlightedChars = 0f
+                                    var totalChars = 0
+                                    for (word in line.words) {
+                                        totalChars += word.text.length
+                                        if (curProgressMs >= word.startTime + word.duration) {
+                                            highlightedChars += word.text.length
+                                        } else if (curProgressMs >= word.startTime) {
+                                            val wRatio = (curProgressMs - word.startTime).toFloat() / word.duration
+                                            highlightedChars += word.text.length * wRatio.coerceIn(0f, 1f)
+                                        }
+                                    }
+                                    val drawRatio = if (totalChars > 0) highlightedChars / totalChars else 0f
+
+                                    val clipWidth = size.width * drawRatio.coerceIn(0f, 1f)
+                                    clipRect(right = clipWidth) {
+                                        this@drawWithContent.drawContent()
+                                    }
+                                }
+                            )
+                        }
+                    } else {
+                        // 传统 LRC，或非活动状态的 YRC 行
+                        Text(
+                            text = text,
+                            fontSize = fontSizeSp.sp,
+                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                            color = textColor,
+                            textAlign = TextAlign.Start
+                        )
+                    }
                 } else {
                     if (translationMode == 1) {
                         AnimatedVisibility(

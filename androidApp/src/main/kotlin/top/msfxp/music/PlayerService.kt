@@ -220,7 +220,7 @@ class PlayerService : MediaSessionService() {
 
         // 3. Get Player and build MediaSession
         runCatching {
-            val player = api.AndroidPlayerController.player
+            val player = api.AndroidPlayerController.lyricPlayer
 
             val intent = Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP

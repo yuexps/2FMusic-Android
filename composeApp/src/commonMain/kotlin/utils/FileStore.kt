@@ -1,6 +1,5 @@
 package utils
 
-import okio.FileSystem
 import okio.Path.Companion.toPath
 import okio.buffer
 import io.ktor.utils.io.readAvailable
@@ -152,17 +151,29 @@ object FileStore {
     }
 
     /**
-     * 保存歌词文本文件
+     * 保存歌词文本文件 (智能 YRC/LRC 后缀识别)
      */
     fun saveLyrics(songId: String, text: String) {
-        saveFile("lyrics/lyrics_$songId.lrc", text.encodeToByteArray())
+        val isYrc = text.contains(Regex("""\[\d+,\d+\]"""))
+        val ext = if (isYrc) "yrc" else "lrc"
+        try {
+            val oppositeExt = if (isYrc) "lrc" else "yrc"
+            val oppositePath = resolvePath("lyrics/lyrics_${songId}.$oppositeExt")
+            if (fs.exists(oppositePath)) fs.delete(oppositePath)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        saveFile("lyrics/lyrics_${songId}.$ext", text.encodeToByteArray())
     }
 
     /**
-     * 读取文本文件（如歌词）
+     * 读取文本文件 (优先读取 .yrc，次之 .lrc)
      */
     fun readLyrics(songId: String): String? {
-        val path = resolvePath("lyrics/lyrics_$songId.lrc")
+        var path = resolvePath("lyrics/lyrics_${songId}.yrc")
+        if (!fs.exists(path)) {
+            path = resolvePath("lyrics/lyrics_${songId}.lrc")
+        }
         if (!fs.exists(path)) return null
         val source = fs.source(path).buffer()
         return try {
@@ -170,6 +181,17 @@ object FileStore {
         } finally {
             source.close()
         }
+    }
+
+    /**
+     * 获取物理存在的歌词文件路径 (优先 .yrc)
+     */
+    fun getLyricsPath(songId: String): String? {
+        val yrcPath = resolvePath("lyrics/lyrics_${songId}.yrc")
+        if (fs.exists(yrcPath)) return "lyrics/lyrics_${songId}.yrc"
+        val lrcPath = resolvePath("lyrics/lyrics_${songId}.lrc")
+        if (fs.exists(lrcPath)) return "lyrics/lyrics_${songId}.lrc"
+        return null
     }
 
     /**

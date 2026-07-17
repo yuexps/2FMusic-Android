@@ -42,7 +42,6 @@ import utils.BackHandler
 import utils.Platform
 
 import data.MusicRepository
-import data.DownloadResult
 
 @Composable
 fun MusicListScreen(
