@@ -30,9 +30,11 @@ class MainActivity : ComponentActivity() {
         
         // 绑定存储权限检测与申请回调到全局桥接点，供 KMP common 模块在触发下载时进行检测
         utils.Platform.hasStoragePermission = { this.hasStoragePermission() }
-        utils.Platform.requestStoragePermission = { this.checkAndRequestStoragePermission() }
+        utils.Platform.requestStoragePermission = { this.requestStoragePermission() }
 
-        checkAndRequestStoragePermission()
+        if (!hasStoragePermission()) {
+            api.GlobalState.updateShowStoragePermissionDialog(true)
+        }
         
         // 从全局访问点获取已在 Application 中初始化的依赖
         val platform = utils.Platform.dependencies
@@ -51,23 +53,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun checkAndRequestStoragePermission() {
-        if (!hasStoragePermission()) {
-            showStoragePermissionRationale()
-        }
-    }
 
-    private fun showStoragePermissionRationale() {
-        android.app.AlertDialog.Builder(this)
-            .setTitle("存储权限申请")
-            .setMessage("2FMusic 需要使用存储管理权限来在您的公共 Documents/2FMusic 目录下保存/读取离线音频、歌词、封面及运行日志。\n\n如果不授予，您将无法使用离线下载与缓存功能。是否前往开启？")
-            .setPositiveButton("前往开启") { _, _ ->
-                requestStoragePermission()
-            }
-            .setNegativeButton("暂不开启", null)
-            .setCancelable(false)
-            .show()
-    }
 
     private fun hasStoragePermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {

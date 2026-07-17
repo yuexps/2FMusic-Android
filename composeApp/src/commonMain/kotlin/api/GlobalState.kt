@@ -28,6 +28,13 @@ object GlobalState {
         _showPlaylistState.value = show
     }
 
+    private val _showStoragePermissionDialog = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val showStoragePermissionDialog = _showStoragePermissionDialog.asStateFlow()
+
+    fun updateShowStoragePermissionDialog(show: Boolean) {
+        _showStoragePermissionDialog.value = show
+    }
+
     /**
      * 触发全局刷新
      */

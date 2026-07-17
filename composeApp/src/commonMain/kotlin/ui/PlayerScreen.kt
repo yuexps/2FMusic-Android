@@ -34,6 +34,7 @@ import top.yukonga.miuix.kmp.window.WindowBottomSheet
 import top.yukonga.miuix.kmp.menu.WindowIconCascadingDropdownMenu
 import utils.LrcLine
 import utils.LrcParser
+import utils.BackHandler
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.map
@@ -131,6 +132,10 @@ fun PlayerScreen(
             )
             onClose()
         }
+    }
+
+    BackHandler(enabled = true) {
+        handleDismiss()
     }
     val showDeleteDialog = remember { mutableStateOf(false) }
     val showDetailsDialog = remember { mutableStateOf(false) }
@@ -900,7 +905,12 @@ fun PlayerScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (playlists.isEmpty()) {
-                    Text("暂无歌单", color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f), modifier = Modifier.padding(vertical = 16.dp))
+                    Text(
+                        text = "暂无歌单",
+                        color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
                 } else {
                     playlists.forEach { playlist ->
                         Card(

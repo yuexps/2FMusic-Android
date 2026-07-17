@@ -66,13 +66,13 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
     var isRefreshing by remember { mutableStateOf(false) }
     var isInitialLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var rawErrorMessage by remember { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
 
     var showConfigDialog by remember { mutableStateOf(false) }
     var baseUrl by remember { mutableStateOf(Platform.config.getBaseUrl()) }
     var password by remember { mutableStateOf(Platform.config.getPassword() ?: "") }
     var passwordVisible by remember { mutableStateOf(false) }
-    var showSuccess by remember { mutableStateOf(false) }
 
     var isHistoryOpen by remember { mutableStateOf(false) }
     var historyRefreshTrigger by remember { mutableStateOf(0) }
@@ -91,13 +91,21 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
             val result = api.getSystemStatus()
             status = result
             errorMessage = null
+            rawErrorMessage = null
         } catch (e: Throwable) {
             status = null
             errorMessage = when {
                 e.message?.contains("401", ignoreCase = true) == true ||
                 e.message?.contains("unauthorized", ignoreCase = true) == true -> "认证失败，请配置正确的密码"
-                else -> "无法连接到服务器"
+
+                e.message?.contains("fetch", ignoreCase = true) == true ||
+                e.message?.contains("Network", ignoreCase = true) == true ||
+                e.message?.contains("Connection", ignoreCase = true) == true ||
+                e.message?.contains("failed", ignoreCase = true) == true -> "服务器连接失败，请检查网络连接或后端配置"
+
+                else -> null
             }
+            rawErrorMessage = e.message ?: e.toString()
             Platform.logger.e("SystemScreen", "无法获取系统状态", e)
         } finally {
             isInitialLoading = false
@@ -108,6 +116,7 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
         loadStatus()
         GlobalState.refreshSignal.collect {
             isRefreshing = true
+            historyRefreshTrigger++
             // 确保至少显示 1 秒动画，优化体验
             val refreshJob = launch { loadStatus() }
             val delayJob = launch { delay(1000) }
@@ -120,7 +129,7 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = if (isHistoryOpen) "播放历史" else "系统设置",
+                title = if (isHistoryOpen) "播放记录" else "系统设置",
                 scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     if (isHistoryOpen) {
@@ -144,18 +153,21 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
                         ) {
                             Icon(
                                 imageVector = MiuixIcons.Delete,
-                                contentDescription = "清空历史"
+                                contentDescription = "清空记录"
                             )
                         }
 
                         if (showClearConfirm) {
                             WindowDialog(
-                                title = "清空历史",
+                                title = "清空记录",
                                 show = showClearConfirm,
                                 onDismissRequest = { showClearConfirm = false }
                             ) {
-                                Column(modifier = Modifier.fillMaxWidth()) {
-                                    Text("确定要清空全部播放历史记录吗？", fontSize = 16.sp)
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text("确定要清空全部播放记录吗？", fontSize = 16.sp)
                                     Spacer(Modifier.height(20.dp))
                                     Row(
                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -175,7 +187,7 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
                                                     try {
                                                         repository.clearHistory()
                                                         historyRefreshTrigger++
-                                                        Platform.toast.show("已清空播放历史")
+                                                        Platform.toast.show("已清空播放记录")
                                                     } catch (e: Exception) {
                                                         Platform.toast.show("清空失败")
                                                     }
@@ -276,7 +288,23 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
                             }
                         }
 
-                        Spacer(Modifier.height(16.dp))
+                        if (status == null && !isInitialLoading) {
+                            Spacer(Modifier.height(16.dp))
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp)
+                            ) {
+                                Text(
+                                    text = errorMessage ?: rawErrorMessage ?: "未知错误",
+                                    color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                    fontSize = 14.sp,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                                )
+                            }
+                        }
+
+                        SmallTitle(text = "配置", modifier = Modifier.padding(start = 8.dp, top = 16.dp, bottom = 8.dp))
 
                         Card(
                             modifier = Modifier
@@ -284,7 +312,7 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
                                 .padding(horizontal = 16.dp)
                         ) {
                             BasicComponent(
-                                title = "配置后端",
+                                title = "后端配置",
                                 summary = "配置服务器地址和密码",
                                 startAction = {
                                     Icon(
@@ -298,7 +326,7 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
                             )
                         }
 
-                        Spacer(Modifier.height(16.dp))
+                        SmallTitle(text = "其他", modifier = Modifier.padding(start = 8.dp, top = 16.dp, bottom = 8.dp))
 
                         Card(
                             modifier = Modifier
@@ -306,13 +334,13 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
                                 .padding(horizontal = 16.dp)
                         ) {
                             BasicComponent(
-                                title = "播放历史",
+                                title = "播放记录",
                                 summary = "查看和管理您的最近播放足迹",
                                 startAction = {
                                     Icon(
                                         modifier = Modifier.padding(end = 16.dp),
                                         imageVector = MiuixIcons.WorldClock,
-                                        contentDescription = "播放历史",
+                                        contentDescription = "播放记录",
                                         tint = MiuixTheme.colorScheme.onBackground
                                     )
                                 },
@@ -370,17 +398,12 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
                                         )
                                         Spacer(Modifier.width(12.dp))
                                         TextButton(
-                                            text = if (showSuccess) "保存成功！" else "保存",
+                                            text = "保存",
                                             onClick = {
                                                 Platform.config.setBaseUrl(baseUrl)
                                                 Platform.config.setPassword(password.ifBlank { null })
-                                                showSuccess = true
                                                 GlobalState.triggerRefresh()
-                                                coroutineScope.launch {
-                                                    delay(1200)
-                                                    showSuccess = false
-                                                    showConfigDialog = false
-                                                }
+                                                showConfigDialog = false
                                             },
                                             modifier = Modifier.weight(1f),
                                             colors = ButtonDefaults.textButtonColorsPrimary()
@@ -424,7 +447,7 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
                                         try {
                                             repository.removeHistory(song.id, song.mtime?.toLong() ?: 0L)
                                             historyRefreshTrigger++
-                                            Platform.toast.show("已删除历史记录")
+                                            Platform.toast.show("已删除播放记录")
                                         } catch (e: Exception) {
                                             Platform.toast.show("删除失败")
                                         }

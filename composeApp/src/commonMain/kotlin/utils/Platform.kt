@@ -2,6 +2,7 @@ package utils
 
 import config.AppConfig
 import data.MusicRepository
+import api.MusicApi
 
 /**
  * 全局平台能力访问点
@@ -9,6 +10,7 @@ import data.MusicRepository
  */
 object Platform {
     private var _dependencies: PlatformDependencies? = null
+    lateinit var api: MusicApi
 
     val dependencies: PlatformDependencies
         get() = _dependencies ?: throw IllegalStateException("Platform dependencies not initialized!")

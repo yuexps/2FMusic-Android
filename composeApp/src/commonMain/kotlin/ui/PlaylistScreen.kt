@@ -42,6 +42,7 @@ import data.MusicRepository
 @Composable
 fun PlaylistScreen(
     repository: MusicRepository,
+    onBatchModeChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -79,6 +80,21 @@ fun PlaylistScreen(
             selectedSongIds = emptySet()
         } else {
             selectedPlaylist = null
+        }
+    }
+
+    LaunchedEffect(isBatchMode) {
+        onBatchModeChange(isBatchMode)
+    }
+
+    LaunchedEffect(Unit) {
+        api.GlobalState.refreshSignal.collect {
+            coroutineScope.launch {
+                try {
+                    repository.syncPlaylists()
+                } catch (_: Exception) {}
+                historyRefreshTrigger++
+            }
         }
     }
 
@@ -132,20 +148,7 @@ fun PlaylistScreen(
                             }
                         },
                         actions = {
-                            if (selectedPlaylist == null) {
-                                IconButton(
-                                    onClick = {
-                                        newPlaylistName = ""
-                                        showCreateDialog = true
-                                    },
-                                    modifier = Modifier.padding(end = 16.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = MiuixIcons.Add,
-                                        contentDescription = "新建歌单"
-                                    )
-                                }
-                            } else if (selectedPlaylist?.id == "history") {
+                            if (selectedPlaylist?.id == "history") {
                                 var showClearConfirm by remember { mutableStateOf(false) }
                                 IconButton(
                                     onClick = { showClearConfirm = true },
@@ -163,7 +166,10 @@ fun PlaylistScreen(
                                         show = showClearConfirm,
                                         onDismissRequest = { showClearConfirm = false }
                                     ) {
-                                        Column(modifier = Modifier.fillMaxWidth()) {
+                                        Column(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
                                             Text("确定要清空全部播放历史记录吗？", fontSize = 16.sp)
                                             Spacer(Modifier.height(20.dp))
                                             Row(
@@ -216,9 +222,7 @@ fun PlaylistScreen(
                 ) + fadeOut(tween(160))
             ) {
                 FloatingToolbar(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, bottom = 146.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     cornerRadius = 20.dp
                 ) {
                     Column(
@@ -495,6 +499,7 @@ fun PlaylistScreen(
                                     song = song,
                                     isBatchMode = isBatchMode,
                                     isSelected = selectedSongIds.contains(song.id),
+                                    isHistory = currentPlaylist.id == "history",
                                     onSelectedChange = { checked ->
                                         selectedSongIds = if (checked) selectedSongIds + song.id else selectedSongIds - song.id
                                     },
@@ -539,7 +544,7 @@ fun PlaylistScreen(
                             }
                             if (isBatchMode) {
                                 item {
-                                    Spacer(Modifier.height(88.dp))
+                                    Spacer(Modifier.height(132.dp))
                                 }
                             }
                         }
@@ -651,7 +656,12 @@ fun PlaylistScreen(
             val targetPlaylists = playlists.filter { selectedPlaylist == null || it.id != selectedPlaylist?.id }
 
             if (targetPlaylists.isEmpty()) {
-                Text("暂无可选择的其它歌单", color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f), modifier = Modifier.padding(vertical = 16.dp))
+                Text(
+                    text = "暂无可选择的其它歌单",
+                    color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
             } else {
                 targetPlaylists.forEach { playlist ->
                     Card(
@@ -712,8 +722,11 @@ fun PlaylistScreen(
 
             Spacer(Modifier.height(12.dp))
             TextButton(
-                text = "取消",
-                onClick = { showSelectPlaylistDialog = false },
+                text = "创建新收藏夹",
+                onClick = {
+                    newPlaylistName = ""
+                    showCreateDialog = true
+                },
                 modifier = Modifier.fillMaxWidth()
             )
         }

@@ -528,6 +528,10 @@ class MusicApi {
                 var attempt = 0
                 while (true) {
                     val currentBaseUrl = Platform.config.getBaseUrl()
+                    if (currentBaseUrl.isBlank()) {
+                        delay(5000)
+                        continue
+                    }
                     val currentHash = Platform.config.getPasswordHash()
                     val session = wsSession
                     if (session != null && session.isActive && wsBaseUrlUsed == currentBaseUrl && wsHashUsed == currentHash) {

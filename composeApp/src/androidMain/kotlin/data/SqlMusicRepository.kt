@@ -1,6 +1,7 @@
 package data
 
 import api.MusicApi
+import api.GlobalState
 import database.MusicDb
 import database.SongEntity
 import kotlinx.coroutines.Dispatchers
@@ -13,6 +14,7 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import database.DatabaseDriverFactory
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -28,6 +30,7 @@ class SqlMusicRepository(
     private val database = MusicDb(driverFactory.createDriver())
     private val queries = database.musicDbQueries
     private val syncMutex = Mutex()
+    private val repositoryScope = kotlinx.coroutines.CoroutineScope(IODispatcher)
 
     override fun getLocalSongs(): Flow<List<Song>> {
         return queries.getAllSongs().asFlow().mapToList(IODispatcher).map { entities ->
@@ -55,9 +58,23 @@ class SqlMusicRepository(
     }
 
     override fun getSongsInPlaylist(playlistId: String): Flow<List<Song>> {
-        return queries.getSongsInPlaylist(playlistId).asFlow().mapToList(IODispatcher).map { entities ->
-            entities.map { it.toModel() }
-        }
+        return queries.getSongsInPlaylist(playlistId)
+            .asFlow()
+            .mapToList(IODispatcher)
+            .map { entities ->
+                entities.map { it.toModel() }
+            }
+            .onStart {
+                repositoryScope.launch {
+                    try {
+                        val songIds = api.getPlaylistSongs(playlistId)
+                        syncPlaylistSongs(playlistId, songIds)
+                        queries.refreshPlaylistCount(playlistId)
+                    } catch (e: Exception) {
+                        Platform.logger.e("SqlMusicRepository", "按需同步歌单歌曲失败: $playlistId", e)
+                    }
+                }
+            }
     }
 
     override suspend fun addFavorite(id: String) {
@@ -247,16 +264,7 @@ class SqlMusicRepository(
                 }
             }
             syncPlaylistSongs("default", defaultFavIds)
-            playlists.forEach { playlist ->
-                if (playlist.id != "default") {
-                    try {
-                        val songIds = api.getPlaylistSongs(playlist.id)
-                        syncPlaylistSongs(playlist.id, songIds)
-                    } catch (e: Exception) {
-                        Platform.logger.e("SqlMusicRepository", "歌单 [${playlist.name}] 同步失败", e)
-                    }
-                }
-            }
+            // 已移除其它非默认歌单的瀑布式循环拉取，改在 getSongsInPlaylist 进行按需惰性加载。
         } catch (e: Exception) {
             Platform.logger.e("SqlMusicRepository", "歌单列表同步过程中发生异常", e)
         }
@@ -359,7 +367,7 @@ class SqlMusicRepository(
     override fun downloadMusic(song: Song): DownloadResult {
         // 前置权限拦截：如果未授权，主动触发弹窗申请流程并中止当前下载
         if (utils.Platform.hasStoragePermission?.invoke() == false) {
-            utils.Platform.requestStoragePermission?.invoke()
+            GlobalState.updateShowStoragePermissionDialog(true)
             Platform.toast.show("需要存储权限以保存歌曲，请授予权限后再试")
             return DownloadResult.ERROR
         }
@@ -538,39 +546,81 @@ class SqlMusicRepository(
         return name.substring(prefix.length, name.length - suffix.length)
     }
 
-    override fun getPlayHistory(): Flow<List<Song>> = kotlinx.coroutines.flow.flow {
-        try {
-            val historyList = api.getHistory()
-            val songs = historyList.map { history ->
-                val songDto = history.song
-                val existing = queries.getSongById(songDto.id).executeAsOneOrNull()
-                Song(
-                    id = songDto.id,
-                    filename = existing?.filename ?: songDto.filename ?: ((songDto.title ?: "unknown") + " - " + (songDto.artist ?: "unknown") + ".mp3"),
-                    title = songDto.title ?: existing?.title,
-                    artist = songDto.artist ?: existing?.artist,
-                    album = songDto.album ?: existing?.album,
-                    mtime = (songDto.mtime ?: history.time.toDouble()),
-                    size = existing?.size ?: songDto.size,
-                    albumArt = songDto.albumArt ?: existing?.albumArt,
-                    localCoverPath = existing?.localCoverPath,
-                    localLyricsPath = existing?.localLyricsPath,
-                    localAudioPath = existing?.localAudioPath
-                )
+    override fun getPlayHistory(): Flow<List<Song>> {
+        return queries.getLocalPlayHistory()
+            .asFlow()
+            .mapToList(IODispatcher)
+            .map { list ->
+                list.map { entity ->
+                    Song(
+                        id = entity.id,
+                        filename = entity.filename,
+                        title = entity.title,
+                        artist = entity.artist,
+                        album = entity.album,
+                        mtime = entity.playTime.toDouble(),
+                        size = entity.size,
+                        albumArt = entity.albumArt,
+                        localCoverPath = entity.localCoverPath,
+                        localLyricsPath = entity.localLyricsPath,
+                        localAudioPath = entity.localAudioPath
+                    )
+                }
             }
-            emit(songs)
-        } catch (e: Exception) {
-            Platform.logger.e("SqlMusicRepository", "获取播放历史失败", e)
-            emit(emptyList())
-        }
+            .onStart {
+                repositoryScope.launch {
+                    try {
+                        val historyList = api.getHistory()
+                        queries.transaction {
+                            queries.deleteAllPlayHistory()
+                            historyList.forEach { history ->
+                                val songDto = history.song
+                                val existing = queries.getSongById(songDto.id).executeAsOneOrNull()
+                                if (existing == null) {
+                                    queries.insertSong(
+                                        id = songDto.id,
+                                        filename = songDto.filename,
+                                        title = songDto.title,
+                                        artist = songDto.artist,
+                                        album = songDto.album,
+                                        mtime = songDto.mtime,
+                                        size = songDto.size,
+                                        albumArt = songDto.albumArt,
+                                        localCoverPath = null,
+                                        localLyricsPath = null,
+                                        localAudioPath = null
+                                    )
+                                }
+                                queries.insertPlayHistory(songDto.id, history.time)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Platform.logger.e("SqlMusicRepository", "按需同步播放记录失败", e)
+                    }
+                }
+            }
     }
 
     override suspend fun removeHistory(songId: String, playTime: Long) {
-        api.removeHistory(songId, playTime)
+        withContext(IODispatcher) {
+            try {
+                queries.deletePlayHistory(songId)
+            } catch (e: Exception) {
+                Platform.logger.e("SqlMusicRepository", "本地删除播放记录失败", e)
+            }
+            api.removeHistory(songId, playTime)
+        }
     }
 
     override suspend fun clearHistory() {
-        api.clearHistory()
+        withContext(IODispatcher) {
+            try {
+                queries.deleteAllPlayHistory()
+            } catch (e: Exception) {
+                Platform.logger.e("SqlMusicRepository", "本地清空播放记录失败", e)
+            }
+            api.clearHistory()
+        }
     }
 
     private fun SongEntity.toModel(): Song {

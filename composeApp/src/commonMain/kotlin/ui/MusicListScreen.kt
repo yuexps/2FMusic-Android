@@ -48,6 +48,7 @@ import data.DownloadResult
 fun MusicListScreen(
     repository: MusicRepository,
     onBatchModeChange: (Boolean) -> Unit = {},
+    onNavigateToSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val songs by repository.getLocalSongs().collectAsState(initial = emptyList())
@@ -106,18 +107,7 @@ fun MusicListScreen(
             errorMessage = null
         } catch (e: Throwable) {
             isSyncing = false
-            errorMessage = when {
-                e.message?.contains("401", ignoreCase = true) == true || e.message?.contains("unauthorized", ignoreCase = true) == true ->
-                    "认证失败，请在'系统'页面配置正确的密码"
-
-                e.message?.contains("fetch", ignoreCase = true) == true ||
-                e.message?.contains("Network", ignoreCase = true) == true ||
-                e.message?.contains("Connection", ignoreCase = true) == true ||
-                e.message?.contains("failed", ignoreCase = true) == true ->
-                    "服务器连接失败，请检查网络连接或后端配置"
-
-                else -> "发生异常\n(${e.message ?: "未知错误"})"
-            }
+            errorMessage = e.message ?: e.toString()
             e.printStackTrace()
         }
     }
@@ -405,7 +395,7 @@ fun MusicListScreen(
                                         verticalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Text(
-                                            errorMessage!!,
+                                            text = "网络请求失败，请前往设置页检查后端配置",
                                             style = TextStyle(
                                                 color = MiuixTheme.colorScheme.error,
                                                 fontSize = 16.sp,
@@ -417,10 +407,10 @@ fun MusicListScreen(
                                         Spacer(Modifier.height(16.dp))
                                         Button(
                                             onClick = {
-                                                scope.launch { syncSongs() }
+                                                onNavigateToSettings()
                                             }
                                         ) {
-                                            Text("重试")
+                                            Text("前往设置")
                                         }
                                     }
                                 }
@@ -560,7 +550,12 @@ fun MusicListScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (playlists.isEmpty()) {
-                Text("暂无歌单", color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f), modifier = Modifier.padding(vertical = 16.dp))
+                Text(
+                    text = "暂无歌单",
+                    color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
             } else {
                 playlists.forEach { playlist ->
                     Card(
@@ -659,7 +654,7 @@ private fun BatchActionButton(
 }
 
 @Composable
-fun SongItem(
+private fun SongItem(
     song: Song,
     currentSong: Song?,
     isBatchMode: Boolean,

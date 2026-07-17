@@ -17,7 +17,7 @@ class AndroidAppConfig : AppConfig {
         private const val KEY_BASE_URL = "app_base_url"
         private const val KEY_PASSWORD = "app_password"
         private const val KEY_PLAYBACK_STATE = "playback_state"
-        private const val DEFAULT_BASE_URL = "http://192.168.31.254:23237"
+        private const val DEFAULT_BASE_URL = ""
     }
 
     private var prefs: SharedPreferences? = null

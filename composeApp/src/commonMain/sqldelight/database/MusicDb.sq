@@ -136,3 +136,31 @@ DELETE FROM PlaylistSong WHERE playlistId = ?;
 getAllSongPaths:
 SELECT id, localAudioPath, localCoverPath, localLyricsPath FROM SongEntity;
 
+
+-- 播放历史记录本地表
+CREATE TABLE PlayHistoryEntity (
+    songId TEXT NOT NULL,
+    playTime INTEGER NOT NULL,
+    PRIMARY KEY (songId, playTime),
+    FOREIGN KEY(songId) REFERENCES SongEntity(id) ON DELETE CASCADE
+);
+
+-- 获取所有本地播放历史并关联 SongEntity，按播放时间倒序
+getLocalPlayHistory:
+SELECT SongEntity.*, PlayHistoryEntity.playTime
+FROM PlayHistoryEntity
+INNER JOIN SongEntity ON PlayHistoryEntity.songId = SongEntity.id
+ORDER BY PlayHistoryEntity.playTime DESC;
+
+-- 插入单条播放历史记录
+insertPlayHistory:
+INSERT OR REPLACE INTO PlayHistoryEntity(songId, playTime) VALUES (?, ?);
+
+-- 删除特定单条播放历史记录
+deletePlayHistory:
+DELETE FROM PlayHistoryEntity WHERE songId = ?;
+
+-- 清空所有播放历史记录
+deleteAllPlayHistory:
+DELETE FROM PlayHistoryEntity;
+

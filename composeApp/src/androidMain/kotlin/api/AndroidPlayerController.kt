@@ -39,6 +39,7 @@ object AndroidPlayerController : BasePlayerController() {
     private var lastPostedLyricText: String? = null
     private var lastPostedLyricArtist: String? = null
     private var lyricsJob: Job? = null
+    private var isSongReported = false
 
     fun initialize(context: Context) {
         if (isInitialized) return
@@ -114,6 +115,8 @@ object AndroidPlayerController : BasePlayerController() {
                         if (oldSongId == songId && songId != null) {
                             return
                         }
+
+                        isSongReported = false
 
                         val index = player.currentMediaItemIndex
                         currentIndex.value = index
@@ -462,6 +465,22 @@ object AndroidPlayerController : BasePlayerController() {
                         progress.value = pos.toFloat() / dur.toFloat()
 
                         updateLyricsMetadata(pos)
+
+                        // 播放进度超过 1 分钟（60s）或者超过总长度的一半时自动向服务器上报播放记录
+                        val songId = currentSong.value?.id
+                        if (songId != null && !isSongReported) {
+                            if (pos >= 60000L || (pos.toFloat() / dur.toFloat() >= 0.5f)) {
+                                isSongReported = true
+                                launch {
+                                    try {
+                                        Platform.api.addHistory(songId)
+                                        Platform.logger.i("AndroidPlayerController", "已成功上报播放历史: $songId")
+                                    } catch (e: Exception) {
+                                        Platform.logger.e("AndroidPlayerController", "上报播放历史失败: $songId", e)
+                                    }
+                                }
+                            }
+                        }
 
                         // 每 10 秒保存一次进度
                         if ((Platform.getTimeMillis() % 10000L) < 500L) {

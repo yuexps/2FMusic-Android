@@ -37,6 +37,7 @@ class FMusicApplication : Application() {
             isWasm = false
         )
         utils.Platform.init(platform)
+        utils.Platform.api = mApi
 
         // 绑定 Android 原生封面图色彩提取器，采样封面以获取高饱和度主导色
         utils.Platform.coverColorExtractor = { url, callback ->
