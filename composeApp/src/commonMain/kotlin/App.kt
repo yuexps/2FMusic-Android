@@ -268,7 +268,8 @@ fun App(platform: PlatformDependencies) {
                         }
 
                         LazyColumn(
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(bottom = 120.dp)
                         ) {
                             itemsIndexed(playlist) { index, song ->
                                 val isPlaying = index == currentIndex

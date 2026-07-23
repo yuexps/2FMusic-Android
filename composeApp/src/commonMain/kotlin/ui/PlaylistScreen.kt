@@ -88,12 +88,16 @@ fun PlaylistScreen(
     }
 
     LaunchedEffect(Unit) {
-        api.GlobalState.refreshSignal.collect {
-            coroutineScope.launch {
+        coroutineScope.launch {
+            api.GlobalState.historyRefreshSignal.collect {
+                historyRefreshTrigger++
+            }
+        }
+        coroutineScope.launch {
+            api.GlobalState.favoriteRefreshSignal.collect {
                 try {
                     repository.syncPlaylists()
                 } catch (_: Exception) {}
-                historyRefreshTrigger++
             }
         }
     }
@@ -361,7 +365,7 @@ fun PlaylistScreen(
                     // 显示收藏夹列表
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(12.dp),
+                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 160.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         val defaultPlaylist = playlists.find { it.isDefault == 1 || it.id == "default" }
@@ -489,7 +493,7 @@ fun PlaylistScreen(
                     } else {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(12.dp),
+                            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 160.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(songs) { song ->

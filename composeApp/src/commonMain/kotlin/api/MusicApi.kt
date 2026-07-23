@@ -4,7 +4,6 @@ import io.ktor.client.call.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
-import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.client.plugins.websocket.*
@@ -15,7 +14,6 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 import model.*
 import utils.FileStore
@@ -39,6 +37,7 @@ data class WsResponse(
     val error: String? = null
 )
 
+@Suppress("unused")
 class MusicApi {
 
     val libraryChangedFlow get() = Companion.libraryChangedFlow
@@ -630,7 +629,15 @@ class MusicApi {
                                 }
                             }
 
-                            GlobalState.triggerRefresh()
+                            if (event.fields.contains("history")) {
+                                GlobalState.triggerHistoryRefresh()
+                            }
+                            if (event.fields.contains("favorite")) {
+                                GlobalState.triggerFavoriteRefresh()
+                            }
+                            if (event.fields.isEmpty() || event.fields.any { it in listOf("audio", "metadata", "cover", "lyrics") }) {
+                                GlobalState.triggerMusicListRefresh()
+                            }
                         }
                         "scan_status" -> {
                             val event = json.decodeFromJsonElement<ScanStatusEvent>(data)

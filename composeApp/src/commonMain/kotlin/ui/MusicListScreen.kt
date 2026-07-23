@@ -113,7 +113,7 @@ fun MusicListScreen(
 
     LaunchedEffect(Unit) {
         syncSongs()
-        GlobalState.refreshSignal.collect {
+        GlobalState.musicListRefreshSignal.collect {
             syncSongs()
         }
     }
@@ -420,7 +420,7 @@ fun MusicListScreen(
                     else -> {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize().weight(1f),
-                            contentPadding = PaddingValues(12.dp),
+                            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 160.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(songs) { song ->

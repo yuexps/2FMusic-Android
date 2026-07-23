@@ -98,15 +98,20 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
 
     LaunchedEffect(Unit) {
         loadStatus()
-        GlobalState.refreshSignal.collect {
-            isRefreshing = true
-            historyRefreshTrigger++
-            // 确保至少显示 1 秒动画，优化体验
-            val refreshJob = launch { loadStatus() }
-            val delayJob = launch { delay(1000) }
-            refreshJob.join()
-            delayJob.join()
-            isRefreshing = false
+        launch {
+            GlobalState.historyRefreshSignal.collect {
+                historyRefreshTrigger++
+            }
+        }
+        launch {
+            GlobalState.musicListRefreshSignal.collect {
+                isRefreshing = true
+                val refreshJob = launch { loadStatus() }
+                val delayJob = launch { delay(1000) }
+                refreshJob.join()
+                delayJob.join()
+                isRefreshing = false
+            }
         }
     }
 
@@ -414,7 +419,7 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
                 } else {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 80.dp),
+                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 160.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(historySongs) { song ->
