@@ -319,25 +319,33 @@ class SqlMusicRepository(
         if (utils.Platform.hasStoragePermission?.invoke() == false) return@withContext
         if (utils.FileStore.getCoverPath(song.id) == null) {
             try {
-                var targetUrl = song.albumArt
-                if (targetUrl == null) {
+                // 1. 显式发起 api.getAlbumArt，触发服务端多源全网深度刮削引擎 (QQ 音乐 / 网易云等)
+                var targetUrl: String? = null
+                try {
                     val response = api.getAlbumArt(
                         songId = song.id,
                         title = song.title ?: "",
                         artist = song.artist ?: "",
+                        album = song.album ?: "",
                         filename = song.filename ?: ""
                     )
-                    if (response.albumArt != null) {
-                        targetUrl = response.albumArt
-                    }
+                    targetUrl = response.albumArt
+                } catch (e: Exception) {
+                    Platform.logger.i("SqlMusicRepository", "服务端在线刮削封面未获取到，尝试回退历史属性")
                 }
+
+                if (targetUrl == null) {
+                    targetUrl = song.albumArt
+                }
+
+                // 2. 将刮削落盘的最新二进制图片下载并保存至本地存储
                 if (targetUrl != null) {
                     val bytes = api.downloadFile(targetUrl)
                     utils.FileStore.saveCover(song.id, bytes)
                     queries.updateCoverPath("cover/cover_${song.id}.jpg", song.id)
                 }
             } catch (e: Exception) {
-                Platform.logger.e("SqlMusicRepository", "封面持久化失败: ${song.title}", e)
+                Platform.logger.e("SqlMusicRepository", "封面在线刮削与持久化失败: ${song.title}", e)
             }
         }
     }
@@ -350,14 +358,13 @@ class SqlMusicRepository(
                     songId = song.id,
                     title = song.title ?: "",
                     artist = song.artist ?: "",
+                    album = song.album ?: "",
                     filename = song.filename ?: "",
                     yrc = true
                 )
                 if (response.lyrics != null) {
-                    val isYrc = response.lyrics.contains(Regex("""\[\d+,\d+\]"""))
-                    val ext = if (isYrc) "yrc" else "lrc"
                     utils.FileStore.saveLyrics(song.id, response.lyrics)
-                    queries.updateLyricsPath("lyrics/lyrics_${song.id}.$ext", song.id)
+                    queries.updateLyricsPath("lyrics/lyrics_${song.id}.lrc", song.id)
                 }
             } catch (e: Exception) {
                 Platform.logger.e("SqlMusicRepository", "歌词持久化失败: ${song.title}", e)
@@ -451,9 +458,6 @@ class SqlMusicRepository(
         val lyricsFile = lyricsPath ?: "lyrics/lyrics_$songId.lrc"
         Platform.logger.i("SqlMusicRepository", "尝试清理本地歌词: $lyricsFile")
         utils.FileStore.deleteFile(lyricsFile)
-        if (lyricsPath == null) {
-            utils.FileStore.deleteFile("lyrics/lyrics_$songId.yrc")
-        }
     }
 
     override suspend fun clearMetadata(song: Song) {

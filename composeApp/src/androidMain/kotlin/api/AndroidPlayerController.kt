@@ -257,7 +257,8 @@ object AndroidPlayerController : BasePlayerController() {
         }
 
         if (uri == null) {
-            val url = "$baseUrl/api/music/play/${song.id}?$auth"
+            val playPath = "/api/music/play/${song.id}?$auth"
+            val url = if (baseUrl.endsWith("/")) "${baseUrl.dropLast(1)}$playPath" else "$baseUrl$playPath"
             uri = url.toUri()
             if (verbose) Platform.logger.i("Audio", "回退到远程 URL: $url")
         }

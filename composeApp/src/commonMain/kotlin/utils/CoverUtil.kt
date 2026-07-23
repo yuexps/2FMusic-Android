@@ -35,10 +35,12 @@ object CoverUtil {
             val separator = if (artPath.contains("?")) "&" else "?"
             val authSuffix = if (hash != null) "${separator}auth=$hash" else ""
             
-            if (artPath.startsWith("http")) {
+            if (artPath.startsWith("http://", ignoreCase = true) || artPath.startsWith("https://", ignoreCase = true)) {
                 artPath
             } else {
-                "${Platform.config.getBaseUrl()}$artPath$authSuffix"
+                val baseUrl = Platform.config.getBaseUrl()
+                val normalizedArt = if (artPath.startsWith("/")) artPath else "/$artPath"
+                "$baseUrl$normalizedArt$authSuffix"
             }
         }
     }

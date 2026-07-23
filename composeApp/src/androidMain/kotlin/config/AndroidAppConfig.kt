@@ -55,12 +55,23 @@ class AndroidAppConfig : AppConfig {
         return prefs ?: throw IllegalStateException("AndroidAppConfig not initialized with Context")
     }
 
+    private fun normalizeBaseUrl(url: String): String {
+        val trimmed = url.trim().trimEnd('/')
+        if (trimmed.isEmpty()) return ""
+        if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
+            return trimmed
+        }
+        return "http://$trimmed"
+    }
+
     override fun getBaseUrl(): String {
-        return getPrefs().getString(KEY_BASE_URL, DEFAULT_BASE_URL) ?: DEFAULT_BASE_URL
+        val raw = getPrefs().getString(KEY_BASE_URL, DEFAULT_BASE_URL) ?: DEFAULT_BASE_URL
+        return normalizeBaseUrl(raw)
     }
 
     override fun setBaseUrl(url: String) {
-        getPrefs().edit { putString(KEY_BASE_URL, url.trimEnd('/')) }
+        val normalized = normalizeBaseUrl(url)
+        getPrefs().edit { putString(KEY_BASE_URL, normalized) }
     }
 
     private var cachedHash: String? = null

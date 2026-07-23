@@ -163,8 +163,8 @@ fun PlayerScreen(
     val playlists by repository.getAllPlaylists().collectAsState(initial = emptyList())
     val showSelectPlaylistDialog = remember { mutableStateOf(false) }
 
-    // 当歌曲改变时加载歌词与封面持久化
-    LaunchedEffect(currentSong) {
+    // 当歌曲改变时加载歌词与封面持久化 (以 song.id 作为 key 避免对象重绘导致的多次解析)
+    LaunchedEffect(currentSong?.id) {
         currentSong?.let { song ->
             Platform.logger.i("Player", "歌曲变更: ${song.title} (ID: ${song.id})")
             isLoadingLyrics = true

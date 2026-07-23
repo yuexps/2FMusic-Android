@@ -192,8 +192,12 @@ data class PreferenceValue(
 // 广播事件模型
 @Serializable
 data class LibraryChangedEvent(
-    @SerialName("library_version")
-    val libraryVersion: Double
+    @SerialName("event_type")
+    val eventType: String = "reload_all",
+    @SerialName("song_ids")
+    val songIds: List<String> = emptyList(),
+    val fields: List<String> = emptyList(),
+    val timestamp: Long = 0L
 )
 
 @Serializable

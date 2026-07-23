@@ -142,29 +142,17 @@ object FileStore {
     }
 
     /**
-     * 保存歌词文本文件 (智能 YRC/LRC 后缀识别)
+     * 保存歌词文本文件 (统一存为 .lrc 后缀)
      */
     fun saveLyrics(songId: String, text: String) {
-        val isYrc = text.contains(Regex("""\[\d+,\d+\]"""))
-        val ext = if (isYrc) "yrc" else "lrc"
-        try {
-            val oppositeExt = if (isYrc) "lrc" else "yrc"
-            val oppositePath = resolvePath("lyrics/lyrics_${songId}.$oppositeExt")
-            if (fs.exists(oppositePath)) fs.delete(oppositePath)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        saveFile("lyrics/lyrics_${songId}.$ext", text.encodeToByteArray())
+        saveFile("lyrics/lyrics_${songId}.lrc", text.encodeToByteArray())
     }
 
     /**
-     * 读取文本文件 (优先读取 .yrc，次之 .lrc)
+     * 读取歌词文本文件 (.lrc)
      */
     fun readLyrics(songId: String): String? {
-        var path = resolvePath("lyrics/lyrics_${songId}.yrc")
-        if (!fs.exists(path)) {
-            path = resolvePath("lyrics/lyrics_${songId}.lrc")
-        }
+        val path = resolvePath("lyrics/lyrics_${songId}.lrc")
         if (!fs.exists(path)) return null
         return fs.source(path).buffer().use { source ->
             source.readUtf8()
@@ -172,11 +160,9 @@ object FileStore {
     }
 
     /**
-     * 获取物理存在的歌词文件路径 (优先 .yrc)
+     * 获取物理存在的歌词文件路径 (.lrc)
      */
     fun getLyricsPath(songId: String): String? {
-        val yrcPath = resolvePath("lyrics/lyrics_${songId}.yrc")
-        if (fs.exists(yrcPath)) return "lyrics/lyrics_${songId}.yrc"
         val lrcPath = resolvePath("lyrics/lyrics_${songId}.lrc")
         if (fs.exists(lrcPath)) return "lyrics/lyrics_${songId}.lrc"
         return null

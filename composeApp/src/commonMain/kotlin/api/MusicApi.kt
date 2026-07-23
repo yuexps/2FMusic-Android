@@ -71,23 +71,25 @@ class MusicApi {
         return ApiResponse(success = true)
     }
 
-    suspend fun getLyrics(songId: String, title: String, artist: String?, filename: String?, yrc: Boolean? = null): LyricsResponse {
+    suspend fun getLyrics(songId: String, title: String, artist: String?, album: String? = null, filename: String?, yrc: Boolean? = null): LyricsResponse {
         val data = buildJsonObject {
             put("song_id", songId)
             put("title", title)
             if (artist != null) put("artist", artist)
+            if (album != null) put("album", album)
             if (filename != null) put("filename", filename)
             if (yrc != null) put("yrc", yrc)
         }
         return sendRequest<LyricsResponse>("music/lyrics", data) ?: LyricsResponse()
     }
 
-    suspend fun getAlbumArt(songId: String, title: String, artist: String?, filename: String?): AlbumArtResponse {
+    suspend fun getAlbumArt(songId: String, title: String, artist: String?, album: String? = null, filename: String?): AlbumArtResponse {
         val data = buildJsonObject {
             put("song_id", songId)
             put("title", title)
-            put("artist", artist)
-            put("filename", filename)
+            if (artist != null) put("artist", artist)
+            if (album != null) put("album", album)
+            if (filename != null) put("filename", filename)
         }
         return sendRequest<AlbumArtResponse>("music/album-art", data) ?: AlbumArtResponse()
     }
@@ -314,6 +316,54 @@ class MusicApi {
         return ApiResponse(success = true)
     }
 
+    /**
+     * 智能网络探活探测：当地址未提供协议时，按 HTTPS -> HTTP 顺序进行实际网络连通测试
+     */
+    suspend fun probeProtocol(inputUrl: String): String {
+        val trimmed = inputUrl.trim().trimEnd('/')
+        if (trimmed.isEmpty()) return ""
+        if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
+            return trimmed
+        }
+
+        val httpsUrl = "https://$trimmed"
+        val httpUrl = "http://$trimmed"
+
+        // 1. 优先尝试 HTTPS 握手探活
+        try {
+            val response = client.get("$httpsUrl/api/system/get_status") {
+                expectSuccess = false
+                timeout {
+                    requestTimeoutMillis = 1500
+                    connectTimeoutMillis = 1500
+                    socketTimeoutMillis = 1500
+                }
+            }
+            Platform.logger.i("MusicApi", "HTTPS 探活成功 (Http ${response.status.value}): $httpsUrl")
+            return httpsUrl
+        } catch (e: Throwable) {
+            Platform.logger.i("MusicApi", "HTTPS 探活失败 (${e.message})，转为尝试 HTTP 探活...")
+        }
+
+        // 2. 探活失败退避尝试 HTTP
+        try {
+            val response = client.get("$httpUrl/api/system/get_status") {
+                expectSuccess = false
+                timeout {
+                    requestTimeoutMillis = 1500
+                    connectTimeoutMillis = 1500
+                    socketTimeoutMillis = 1500
+                }
+            }
+            Platform.logger.i("MusicApi", "HTTP 探活成功 (Http ${response.status.value}): $httpUrl")
+            return httpUrl
+        } catch (e: Throwable) {
+            Platform.logger.i("MusicApi", "HTTP 探活失败 (${e.message})，默认回退至 http://")
+        }
+
+        return httpUrl
+    }
+
     // --- 7. HTTP 专属方法 ---
     suspend fun downloadFile(url: String, onProgress: ((bytesSentTotal: Long, contentLength: Long) -> Unit)? = null): ByteArray {
         val fullUrl = if (url.startsWith("http")) url else "$baseUrl$url"
@@ -490,7 +540,11 @@ class MusicApi {
                     }
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
-                    Platform.logger.e("MusicApi", "WebSocket incoming loop error", e)
+                    if (e is java.net.SocketException || e is io.ktor.client.plugins.websocket.WebSocketException) {
+                        Platform.logger.i("MusicApi", "WebSocket 连接中断 (${e.message})，准备重连...")
+                    } else {
+                        Platform.logger.e("MusicApi", "WebSocket 传输循环异常", e)
+                    }
                 } finally {
                     pendingMutex.withLock {
                         val copy = pendingRequests.toMap()
@@ -554,15 +608,28 @@ class MusicApi {
         }
 
         private fun handleBroadcast(response: WsResponse) {
-            val type = response.type ?: return
+            val action = response.action ?: response.type ?: return
             val data = response.data ?: return
-            Platform.logger.i("MusicApi", "Received server broadcast: type=$type")
+            Platform.logger.i("MusicApi", "收到服务端广播通知: action=$action")
             wsScope?.launch {
                 try {
-                    when (type) {
+                    when (action) {
                         "library_changed" -> {
                             val event = json.decodeFromJsonElement<LibraryChangedEvent>(data)
                             _libraryChangedFlow.emit(event)
+
+                            for (songId in event.songIds) {
+                                if (event.fields.contains("cover")) {
+                                    FileStore.deleteFile("covers/cover_${songId}.webp")
+                                }
+                                if (event.fields.contains("lyrics")) {
+                                    FileStore.deleteFile("lyrics/lyrics_${songId}.lrc")
+                                }
+                                if (event.fields.contains("audio")) {
+                                    FileStore.deleteFile("audio/audio_${songId}.mp3")
+                                }
+                            }
+
                             GlobalState.triggerRefresh()
                         }
                         "scan_status" -> {
@@ -579,7 +646,7 @@ class MusicApi {
                         }
                     }
                 } catch (e: Exception) {
-                    Platform.logger.e("MusicApi", "Failed to decode and emit broadcast event: type=$type", e)
+                    Platform.logger.e("MusicApi", "解析并分发广播事件失败: action=$action", e)
                 }
             }
         }

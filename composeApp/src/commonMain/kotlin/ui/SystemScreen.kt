@@ -368,23 +368,32 @@ fun SystemScreen(repository: MusicRepository, modifier: Modifier = Modifier) {
 
                                     Spacer(Modifier.height(20.dp))
 
+                                    var isProbing by remember { mutableStateOf(false) }
                                     Row(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         TextButton(
                                             text = "取消",
+                                            enabled = !isProbing,
                                             onClick = { showConfigDialog = false },
                                             modifier = Modifier.weight(1f)
                                         )
                                         Spacer(Modifier.width(12.dp))
                                         TextButton(
-                                            text = "保存",
+                                            text = if (isProbing) "探测中..." else "保存",
+                                            enabled = !isProbing,
                                             onClick = {
-                                                Platform.config.setBaseUrl(baseUrl)
-                                                Platform.config.setPassword(password.ifBlank { null })
-                                                GlobalState.triggerRefresh()
-                                                showConfigDialog = false
+                                                coroutineScope.launch {
+                                                    isProbing = true
+                                                    val validUrl = api.probeProtocol(baseUrl)
+                                                    baseUrl = validUrl
+                                                    Platform.config.setBaseUrl(validUrl)
+                                                    Platform.config.setPassword(password.ifBlank { null })
+                                                    GlobalState.triggerRefresh()
+                                                    isProbing = false
+                                                    showConfigDialog = false
+                                                }
                                             },
                                             modifier = Modifier.weight(1f),
                                             colors = ButtonDefaults.textButtonColorsPrimary()
